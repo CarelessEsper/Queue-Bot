@@ -439,11 +439,8 @@ export namespace DisplayUtils {
 					` to ${channelMention(queue.voiceDestinationChannelId)}` : "";
 				parts.push(`- ${pullMethodStr} pulling members from ${srcStr}${dstStr}`);
 			}
-			else if ([Scope.NonAdmin, Scope.All].includes(queue.buttonsToggle)) {
-				parts.push(`${commandMention("join")}, ${commandMention("leave")}, or click the buttons below.`);
-			}
 			else {
-				parts.push(`${commandMention("join")} or ${commandMention("leave")}.`);
+				parts.push("Click the buttons below to join or leave the queue.");
 			}
 
 			// Queue rules

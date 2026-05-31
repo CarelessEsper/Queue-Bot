@@ -6,8 +6,6 @@ import { BlacklistCommand } from "./commands/blacklist.command.ts";
 import { ClearCommand } from "./commands/clear.command.ts";
 import { DisplaysCommand } from "./commands/displays.command.ts";
 import { HelpCommand } from "./commands/help.command.ts";
-import { JoinCommand } from "./commands/join.command.ts";
-import { LeaveCommand } from "./commands/leave.command.ts";
 import { LoggingCommand } from "./commands/logging.command.ts";
 import { MembersCommand } from "./commands/members.command.ts";
 import { MoveCommand } from "./commands/move.command.ts";
@@ -28,8 +26,6 @@ export const COMMANDS = new Collection<string, Command>([
 	[ClearCommand.ID, new ClearCommand()],
 	[DisplaysCommand.ID, new DisplaysCommand()],
 	[HelpCommand.ID, new HelpCommand()],
-	[JoinCommand.ID, new JoinCommand()],
-	[LeaveCommand.ID, new LeaveCommand()],
 	[LoggingCommand.ID, new LoggingCommand()],
 	[MembersCommand.ID, new MembersCommand()],
 	[MoveCommand.ID, new MoveCommand()],
@@ -41,7 +37,6 @@ export const COMMANDS = new Collection<string, Command>([
 	[ShowCommand.ID, new ShowCommand()],
 	[ShuffleCommand.ID, new ShuffleCommand()],
 	[ToMeCommand.ID, new ToMeCommand()],
-	[VoiceCommand.ID, new VoiceCommand()],
 	[VoiceCommand.ID, new VoiceCommand()],
 	[WhitelistCommand.ID, new WhitelistCommand()],
 ]);
