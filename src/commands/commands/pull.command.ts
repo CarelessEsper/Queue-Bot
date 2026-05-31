@@ -2,11 +2,12 @@ import { SlashCommandBuilder } from "discord.js";
 
 import { MembersOption } from "../../options/options/members.option.ts";
 import { NumberOption } from "../../options/options/number.option.ts";
-import { QueuesOption } from "../../options/options/queues.option.ts";
+import { PullQueuesOption } from "../../options/options/pull-queues.option.ts";
 import { AdminCommand } from "../../types/command.types.ts";
 import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { SlashInteraction } from "../../types/interaction.types.ts";
 import { MemberUtils } from "../../utils/member.utils.ts";
+import { QueueTagUtils } from "../../utils/queue-tag.utils.ts";
 
 export class PullCommand extends AdminCommand {
 	static readonly ID = "pull";
@@ -14,7 +15,7 @@ export class PullCommand extends AdminCommand {
 	pull = PullCommand.pull;
 
 	static readonly PULL_OPTIONS = {
-		queues: new QueuesOption({ required: true, description: "Queue(s) to pull members from" }),
+		queues: new PullQueuesOption({ required: true, description: "Queue(s) to pull members from" }),
 		count: new NumberOption({ description: "Number of queue members to pull", defaultValue: 1, minValue: 1 }),
 		members: new MembersOption({ description: "Pull specific members instead of the next member" }),
 	};
@@ -34,6 +35,9 @@ export class PullCommand extends AdminCommand {
 		const queues = await PullCommand.PULL_OPTIONS.queues.get(inter);
 		const count = PullCommand.PULL_OPTIONS.count.get(inter);
 		const members = await PullCommand.PULL_OPTIONS.members.get(inter);
+
+		// Enforce forum tag restrictions
+		QueueTagUtils.verifyForumTagAccess(queues, inter.channel as any);
 
 		await MemberUtils.deleteMembers({
 			store: inter.store,

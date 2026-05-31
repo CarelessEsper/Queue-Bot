@@ -13,6 +13,8 @@ import {
 } from "discord.js";
 import { compact, concat, shuffle } from "lodash-es";
 
+import { ExtendStayButton } from "../buttons/buttons/extend-stay.button.ts";
+
 import { Queries } from "../db/queries.ts";
 import { Store } from "../db/store.ts";
 import { MemberRemovalReason } from "../types/db.types.ts";
@@ -34,6 +36,10 @@ export namespace ClientHandler {
 
 	export async function handleInteraction(inter: Interaction) {
 		if (inter.guild) {
+			await new InteractionHandler(inter).handle();
+		}
+		else if (inter.isButton() && inter.customId.startsWith(ExtendStayButton.ID + ":")) {
+			// Extend-stay buttons are sent via DM and have no guild context
 			await new InteractionHandler(inter).handle();
 		}
 		else if ("reply" in inter) {

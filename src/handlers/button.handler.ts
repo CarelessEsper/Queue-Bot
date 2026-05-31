@@ -15,7 +15,10 @@ export class ButtonHandler implements Handler {
 	}
 
 	async handle() {
-		const button = BUTTONS.get(this.inter.customId);
+		// Support prefix-based customIds (e.g. "extend-stay:guildId:queueId:userId")
+		const button = BUTTONS.get(this.inter.customId)
+			?? BUTTONS.find((_btn, id) => this.inter.customId.startsWith(id + ":"));
+
 		if (button) {
 			if (button.deferResponse) {
 				await this.inter.deferReply({ ephemeral: true });

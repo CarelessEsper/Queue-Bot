@@ -17,8 +17,9 @@ export class CommandHandler implements Handler {
 	}
 
 	async handle() {
+		const subcommandGroup = (this.inter.options as any)._subcommandGroup;
 		const subcommandName = (this.inter.options as any)._subcommand;
-		const fullCommandName = `${this.inter.commandName}${subcommandName ? `_${subcommandName}` : ""}`.replace(/-/g, "_");
+		const fullCommandName = `${this.inter.commandName}${subcommandGroup ? `_${subcommandGroup}` : ""}${subcommandName ? `_${subcommandName}` : ""}`.replace(/-/g, "_");
 		const command = COMMANDS.get(this.inter.commandName);
 
 		if (command && fullCommandName in command) {

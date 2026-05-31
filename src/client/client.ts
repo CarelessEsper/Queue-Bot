@@ -2,6 +2,7 @@ import { Client as DiscordClient, GatewayIntentBits, LimitedCollection, type Mes
 
 import { checkForMigration } from "../db/legacy-migration/migrate.ts";
 import { ClientListeners } from "../listeners/client.listeners.ts";
+import { AutoRemoveUtils } from "../utils/auto-remove.utils.ts";
 import { ClientUtils } from "../utils/client.utils.ts";
 import { ScheduleUtils } from "../utils/schedule.utils.ts";
 
@@ -76,6 +77,8 @@ export namespace Client {
 			await ClientUtils.registerCommands();
 
 			ScheduleUtils.loadSchedules();
+
+			AutoRemoveUtils.loadAll();
 
 			console.timeEnd("READY");
 

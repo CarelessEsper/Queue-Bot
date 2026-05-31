@@ -5,6 +5,7 @@ import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { ButtonInteraction } from "../../types/interaction.types.ts";
 import { ButtonUtils } from "../../utils/button.utils.ts";
 import { MemberUtils } from "../../utils/member.utils.ts";
+import { QueueTagUtils } from "../../utils/queue-tag.utils.ts";
 
 export class PullButton extends AdminButton {
 	static readonly ID = "pull";
@@ -15,6 +16,9 @@ export class PullButton extends AdminButton {
 
 	async handle(inter: ButtonInteraction) {
 		const { queue } = await ButtonUtils.getButtonContext(inter);
+
+		// Enforce forum tag restrictions
+		QueueTagUtils.verifyForumTagAccess([queue], inter.channel as any);
 
 		await MemberUtils.deleteMembers({
 			store: inter.store,

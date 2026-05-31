@@ -1,8 +1,9 @@
-import { channelMention, type Collection, inlineCode, roleMention, SlashCommandBuilder } from "discord.js";
+import { type Collection, roleMention, SlashCommandBuilder } from "discord.js";
 import { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { findKey, isNil, omitBy } from "lodash-es";
 
 import { type DbQueue, QUEUE_TABLE } from "../../db/schema.ts";
+import { AutoRemovePeriodOption } from "../../options/options/auto-remove-period.option.ts";
 import { AutopullToggleOption } from "../../options/options/autopull-toggle.option.ts";
 import { BadgeToggleOption } from "../../options/options/badge-toggle.option.ts";
 import { ColorOption } from "../../options/options/color.option.ts";
@@ -25,14 +26,11 @@ import { RequireMessageToJoinOption } from "../../options/options/require-messag
 import { RoleInQueueOption } from "../../options/options/role-in-queue.option.ts";
 import { RoleOnPullOption } from "../../options/options/role-on-pull.option.ts";
 import { SizeOption } from "../../options/options/size.option.ts";
+import { TagIdOption } from "../../options/options/tag-id.option.ts";
 import { TimestampTypeOption } from "../../options/options/timestamp-type.option.ts";
-import { VoiceDestinationChannelOption } from "../../options/options/voice-destination-channel.option.ts";
-import { VoiceOnlyToggleOption } from "../../options/options/voice-only-toggle.option.ts";
 import { AdminCommand } from "../../types/command.types.ts";
-import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { SlashInteraction } from "../../types/interaction.types.ts";
 import { DisplayUtils } from "../../utils/display.utils.ts";
-import { MemberUtils } from "../../utils/member.utils.ts";
 import { SelectMenuTransactor } from "../../utils/message-utils/select-menu-transactor.ts";
 import { toCollection } from "../../utils/misc.utils.ts";
 import { QueueUtils } from "../../utils/queue.utils.ts";
@@ -104,15 +102,14 @@ export class QueuesCommand extends AdminCommand {
 			hiddenProperties: ["name"],
 			queueIdProperty: "id",
 			valueFormatters: {
+				autoRemovePeriod: timeMention,
 				roleInQueueId: roleMention,
 				roleOnPullId: roleMention,
 				rejoinCooldownPeriod: timeMention,
 				rejoinGracePeriod: timeMention,
-				voiceDestinationChannelId: channelMention,
 			},
 			entries: [...queues.values()],
 		});
-
 		await inter.respond(descriptionMessage);
 	}
 
@@ -122,6 +119,7 @@ export class QueuesCommand extends AdminCommand {
 
 	static readonly ADD_OPTIONS = {
 		name: new NameOption({ required: true, description: "Name of the queue" }),
+		autoRemovePeriod: new AutoRemovePeriodOption({ description: "# of seconds before a member is auto-removed (0 = disabled)" }),
 		autopullToggle: new AutopullToggleOption({ description: "Toggle automatic pulling of queue members" }),
 		badgeToggle: new BadgeToggleOption({ description: "Toggle badges next to queue name" }),
 		buttonsToggle: new ButtonsToggleOption({ description: "Toggle buttons beneath queue displays" }),
@@ -141,9 +139,8 @@ export class QueuesCommand extends AdminCommand {
 		roleInQueue: new RoleInQueueOption({ description: "Role to assign members of the queue" }),
 		roleOnPull: new RoleOnPullOption({ description: "Role to assign members when they are pulled" }),
 		size: new SizeOption({ description: "Limit the size of the queue" }),
+		tagId: new TagIdOption({ description: "Forum tag ID required to pull from this queue (leave blank to disable)" }),
 		timestampType: new TimestampTypeOption({ description: "Format of timestamps on displays" }),
-		voiceOnlyToggle: new VoiceOnlyToggleOption({ description: "Toggle whether queue is restricted to members in source voice channel" }),
-		voiceDestinationChannel: new VoiceDestinationChannelOption({ description: "Voice channel to move members to when they are pulled" }),
 	};
 
 	static async queues_add(inter: SlashInteraction) {
@@ -151,6 +148,7 @@ export class QueuesCommand extends AdminCommand {
 			guildId: inter.guildId,
 			name: QueuesCommand.ADD_OPTIONS.name.get(inter)?.substring(0, 240),
 			...omitBy({
+				autoRemovePeriod: QueuesCommand.ADD_OPTIONS.autoRemovePeriod.get(inter),
 				autopullToggle: QueuesCommand.ADD_OPTIONS.autopullToggle.get(inter),
 				badgeToggle: QueuesCommand.ADD_OPTIONS.badgeToggle.get(inter),
 				buttonsToggle: QueuesCommand.ADD_OPTIONS.buttonsToggle.get(inter),
@@ -170,9 +168,8 @@ export class QueuesCommand extends AdminCommand {
 				roleInQueueId: QueuesCommand.ADD_OPTIONS.roleInQueue.get(inter)?.id,
 				roleOnPullId: QueuesCommand.ADD_OPTIONS.roleOnPull.get(inter)?.id,
 				size: QueuesCommand.ADD_OPTIONS.size.get(inter),
+				tagId: QueuesCommand.ADD_OPTIONS.tagId.get(inter),
 				timestampType: QueuesCommand.ADD_OPTIONS.timestampType.get(inter),
-				voiceOnlyToggle: QueuesCommand.ADD_OPTIONS.voiceOnlyToggle.get(inter),
-				voiceDestinationChannelId: QueuesCommand.ADD_OPTIONS.voiceDestinationChannel.get(inter)?.id,
 			}, isNil),
 		};
 
@@ -189,6 +186,7 @@ export class QueuesCommand extends AdminCommand {
 
 	static readonly SET_OPTIONS = {
 		queues: new QueuesOption({ required: true, description: "Queue(s) to update" }),
+		autoRemovePeriod: new AutoRemovePeriodOption({ description: "# of seconds before a member is auto-removed (0 = disabled)" }),
 		autopullToggle: new AutopullToggleOption({ description: "Toggle automatic pulling of queue members" }),
 		badgeToggle: new BadgeToggleOption({ description: "Toggle badges next to queue name" }),
 		buttonsToggle: new ButtonsToggleOption({ description: "Toggle buttons beneath queue displays" }),
@@ -209,14 +207,14 @@ export class QueuesCommand extends AdminCommand {
 		roleInQueue: new RoleInQueueOption({ description: "Role to assign members of the queue" }),
 		roleOnPull: new RoleOnPullOption({ description: "Role to assign members when they are pulled" }),
 		size: new SizeOption({ description: "Limit the size of the queue" }),
+		tagId: new TagIdOption({ description: "Forum tag ID required to pull from this queue (leave blank to disable)" }),
 		timestampType: new TimestampTypeOption({ description: "How to display timestamps" }),
-		voiceOnlyToggle: new VoiceOnlyToggleOption({ description: "Toggle whether queue is restricted to members in source voice channel" }),
-		voiceDestinationChannel: new VoiceDestinationChannelOption({ description: "Voice channel to move members to when they are pulled" }),
 	};
 
 	static async queues_set(inter: SlashInteraction) {
 		const queues = await QueuesCommand.SET_OPTIONS.queues.get(inter);
 		const update = omitBy({
+			autoRemovePeriod: QueuesCommand.SET_OPTIONS.autoRemovePeriod.get(inter),
 			autopullToggle: QueuesCommand.SET_OPTIONS.autopullToggle.get(inter),
 			badgeToggle: QueuesCommand.SET_OPTIONS.badgeToggle.get(inter),
 			buttonsToggle: QueuesCommand.SET_OPTIONS.buttonsToggle.get(inter),
@@ -237,32 +235,9 @@ export class QueuesCommand extends AdminCommand {
 			roleInQueueId: QueuesCommand.SET_OPTIONS.roleInQueue.get(inter)?.id,
 			roleOnPullId: QueuesCommand.SET_OPTIONS.roleOnPull.get(inter)?.id,
 			size: QueuesCommand.SET_OPTIONS.size.get(inter),
+			tagId: QueuesCommand.SET_OPTIONS.tagId.get(inter),
 			timestampType: QueuesCommand.SET_OPTIONS.timestampType.get(inter),
-			voiceOnlyToggle: QueuesCommand.SET_OPTIONS.voiceOnlyToggle.get(inter),
-			voiceDestinationChannelId: QueuesCommand.SET_OPTIONS.voiceDestinationChannel.get(inter)?.id,
 		}, isNil);
-
-		if (update.voiceOnlyToggle) {
-			const nonVoiceOnlyQueues = queues.filter(queue => !queue.voiceOnlyToggle);
-			for (const queue of nonVoiceOnlyQueues.values()) {
-				const members = inter.store.dbMembers().filter(member => member.queueId === queue.id);
-				if (members.size) {
-					const confirmed = await inter.promptConfirmOrCancel(
-						`You are enabling ${inlineCode(VoiceOnlyToggleOption.ID)} for the ${queueMention(queue)} queue. ` +
-						`There are ${members.size} member${members.size === 1 ? "" : "s"} in the ${queueMention(queue)} queue that will be cleared if you proceed. ` +
-						"Do you wish to proceed?"
-					);
-					if (!confirmed) {
-						await inter.respond("Cancelled queue update. No changes have been made.");
-						return;
-					}
-				}
-			}
-			for (const queue of nonVoiceOnlyQueues.values()) {
-				await MemberUtils.deleteMembers({ store: inter.store, queues: [queue], reason: MemberRemovalReason.Kicked });
-				await inter.respond(`Cleared ${queueMention(queue)} queue of members due to ${inlineCode(VoiceOnlyToggleOption.ID)} being enabled.`, true);
-			}
-		}
 
 		const { updatedQueues } = await QueueUtils.updateQueues(inter.store, queues, update);
 
@@ -283,6 +258,7 @@ export class QueuesCommand extends AdminCommand {
 		const queues = await QueuesCommand.RESET_OPTIONS.queues.get(inter);
 
 		const selectMenuOptions = [
+			{ name: AutoRemovePeriodOption.ID, value: QUEUE_TABLE.autoRemovePeriod.name },
 			{ name: AutopullToggleOption.ID, value: QUEUE_TABLE.autopullToggle.name },
 			{ name: BadgeToggleOption.ID, value: QUEUE_TABLE.badgeToggle.name },
 			{ name: ButtonsToggleOption.ID, value: QUEUE_TABLE.buttonsToggle.name },
@@ -302,9 +278,8 @@ export class QueuesCommand extends AdminCommand {
 			{ name: RoleInQueueOption.ID, value: QUEUE_TABLE.roleInQueueId.name },
 			{ name: RoleOnPullOption.ID, value: QUEUE_TABLE.roleOnPullId.name },
 			{ name: SizeOption.ID, value: QUEUE_TABLE.size.name },
+			{ name: TagIdOption.ID, value: QUEUE_TABLE.tagId.name },
 			{ name: TimestampTypeOption.ID, value: QUEUE_TABLE.timestampType.name },
-			{ name: VoiceOnlyToggleOption.ID, value: QUEUE_TABLE.voiceOnlyToggle.name },
-			{ name: VoiceDestinationChannelOption.ID, value: QUEUE_TABLE.voiceDestinationChannelId.name },
 		];
 		const selectMenuTransactor = new SelectMenuTransactor(inter);
 		const propertiesToReset = await selectMenuTransactor.sendAndReceive("Queue properties to reset", selectMenuOptions) ?? [];
@@ -355,4 +330,5 @@ export class QueuesCommand extends AdminCommand {
 
 		await inter.respond(`Deleted the ${queueMention(queue)} queue.`, true);
 	}
+
 }

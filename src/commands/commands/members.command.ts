@@ -1,4 +1,4 @@
-import { type Collection, SlashCommandBuilder } from "discord.js";
+import { type Collection, EmbedBuilder, SlashCommandBuilder, userMention } from "discord.js";
 import { compact } from "lodash-es";
 
 import type { DbQueue } from "../../db/schema.ts";
@@ -6,15 +6,16 @@ import { UserOption } from "../../options/base-option.ts";
 import { DmMemberOption } from "../../options/options/dm-member.option.ts";
 import { MembersOption } from "../../options/options/members.option.ts";
 import { MessageOption } from "../../options/options/message.option.ts";
+import { QueueOption } from "../../options/options/queue.option.ts";
 import { QueuesOption } from "../../options/options/queues.option.ts";
 import { AdminCommand } from "../../types/command.types.ts";
 import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { SlashInteraction } from "../../types/interaction.types.ts";
 import { ChoiceType } from "../../types/parsing.types.ts";
+import { CustomError } from "../../utils/error.utils.ts";
 import { MemberUtils } from "../../utils/member.utils.ts";
-import { queuesMention, usersMention } from "../../utils/string.utils.ts";
+import { queueMention, queuesMention, usersMention } from "../../utils/string.utils.ts";
 import { ShowCommand } from "./show.command.ts";
-
 export class MembersCommand extends AdminCommand {
 	static readonly ID = "members";
 
@@ -22,6 +23,7 @@ export class MembersCommand extends AdminCommand {
 	members_add = MembersCommand.members_add;
 	members_set = MembersCommand.members_set;
 	members_delete = MembersCommand.members_delete;
+	members_restore = MembersCommand.members_restore;
 
 	data = new SlashCommandBuilder()
 		.setName(MembersCommand.ID)
@@ -52,6 +54,13 @@ export class MembersCommand extends AdminCommand {
 				.setName("delete")
 				.setDescription("Kick members from a queue");
 			Object.values(MembersCommand.DELETE_OPTIONS).forEach(option => option.addToCommand(subcommand));
+			return subcommand;
+		})
+		.addSubcommand(subcommand => {
+			subcommand
+				.setName("restore")
+				.setDescription("Restore a recently-pulled member to the front of the queue");
+			Object.values(MembersCommand.RESTORE_OPTIONS).forEach(option => option.addToCommand(subcommand));
 			return subcommand;
 		});
 
@@ -153,5 +162,54 @@ export class MembersCommand extends AdminCommand {
 			force: true,
 			dmMember,
 		});
+	}
+
+	// ====================================================================
+	//                           /members restore
+	// ====================================================================
+
+	static readonly RESTORE_OPTIONS = {
+		queue: new QueueOption({ required: true, description: "Queue to restore the member into" }),
+		user: new UserOption({ id: "user", required: true, description: "User to restore to the front of the queue" }),
+	};
+
+	static async members_restore(inter: SlashInteraction) {
+		const queue = await MembersCommand.RESTORE_OPTIONS.queue.get(inter);
+		const user = MembersCommand.RESTORE_OPTIONS.user.get(inter);
+
+		// Find the archived entry — must have been pulled
+		const archived = inter.store.dbArchivedMembers().find(
+			m => m.queueId === queue.id && m.userId === user.id && m.reason === MemberRemovalReason.Pulled
+		);
+
+		if (!archived) {
+			throw new CustomError({
+				message: "No recent pull found",
+				embeds: [
+					new EmbedBuilder().setDescription(
+						`${userMention(user.id)} has no recent pull record in the ${queueMention(queue)} queue. ` +
+						`Only members who were pulled can be restored.`
+					),
+				],
+			});
+		}
+
+		const jsMember = await inter.store.jsMember(user.id);
+		if (!jsMember) return;
+
+		// Insert with positionTime = 0n so they sort to the absolute front
+		// (before all existing members regardless of priority)
+		await MemberUtils.restoreMember({
+			store: inter.store,
+			queue,
+			jsMember,
+			positionTime: 0n,
+			message: archived.message,
+		});
+
+		await inter.respond(
+			{ embeds: [new EmbedBuilder().setColor(queue.color).setDescription(`Restored ${userMention(user.id)} to the front of the ${queueMention(queue)} queue.`)] },
+			true
+		);
 	}
 }

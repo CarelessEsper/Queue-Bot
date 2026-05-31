@@ -17,7 +17,10 @@ export class InteractionHandler implements Handler {
 
 	constructor(inter: Interaction) {
 		this.inter = inter as any as AnyInteraction;
-		this.inter.store = new Store(this.inter.guild, this.inter);
+		// DM button interactions (e.g. extend-stay) have no guild — store is built inside the button handler
+		if (this.inter.guild) {
+			this.inter.store = new Store(this.inter.guild, this.inter);
+		}
 	}
 
 	async handle() {

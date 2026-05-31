@@ -28,13 +28,17 @@ export namespace ClientUtils {
 	export async function registerCommands() {
 		try {
 			console.time(`Registered ${COMMANDS.size} commands with server`);
-			const commandsPutRoute = Routes.applicationCommands(process.env.CLIENT_ID);
+			const commandsPutRoute = process.env.GUILD_ID
+				? Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID)
+				: Routes.applicationCommands(process.env.CLIENT_ID);
 			const commandsJSON = COMMANDS.map(c => c.data.toJSON());
 			await new REST()
 				.setToken(process.env.TOKEN)
 				.put(commandsPutRoute, { body: commandsJSON });
 
-			LIVE_COMMANDS = await CLIENT.application.commands.fetch();
+			LIVE_COMMANDS = process.env.GUILD_ID
+				? await CLIENT.application.commands.fetch({ guildId: process.env.GUILD_ID })
+				: await CLIENT.application.commands.fetch();
 			console.timeEnd(`Registered ${COMMANDS.size} commands with server`);
 		}
 		catch (e) {

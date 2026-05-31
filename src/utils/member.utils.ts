@@ -20,6 +20,7 @@ import type { MemberDeleteBy } from "../types/member.types.ts";
 import type { ArrayOrCollection } from "../types/misc.types.ts";
 import { NotificationAction } from "../types/notification.types.ts";
 import { BlacklistUtils } from "./blacklist.utils.ts";
+import { AutoRemoveUtils } from "./auto-remove.utils.ts";
 import { DisplayUtils } from "./display.utils.ts";
 import { CustomError, NotOnQueueWhitelistError, OnQueueBlacklistError, QueueFullError, QueueLockedError } from "./error.utils.ts";
 import { LoggingUtils } from "./message-utils/logging.utils.ts";
@@ -136,6 +137,8 @@ export namespace MemberUtils {
 			const deleted: DbMember[] = compact(userIds.map(userId => store.deleteMember({ queueId: queue.id, userId }, reason)));
 
 			userIds.forEach(userId => modifyMemberRoles(store, userId, queue.roleInQueueId, "remove").catch(() => null));
+			// Cancel any pending auto-remove timers for deleted members
+			userIds.forEach(userId => AutoRemoveUtils.cancel(queue.id, userId));
 
 			// Pull members to the destination channel if they are in a voice channel
 			if (reason === MemberRemovalReason.Pulled) {
@@ -286,6 +289,44 @@ export namespace MemberUtils {
 		});
 	}
 
+	/**
+	 * Restores a previously-pulled member to the front of the queue by inserting
+	 * them with a fixed positionTime of 0n, which sorts before all other members.
+	 */
+	export async function restoreMember(options: {
+		store: Store,
+		queue: DbQueue,
+		jsMember: GuildMember,
+		positionTime: bigint,
+		message?: string,
+	}) {
+		const { store, queue, jsMember, positionTime, message } = options;
+
+		return await db.transaction(async () => {
+			const priorityOrder = PriorityUtils.getMemberPriority(store, queue.id, jsMember);
+
+			const insertedMember = store.insertMember({
+				guildId: store.guild.id,
+				queueId: queue.id,
+				userId: jsMember.id,
+				message,
+				priorityOrder,
+				positionTime,
+			});
+
+			await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");
+
+			// Schedule auto-remove if configured
+			if (queue.autoRemovePeriod && queue.autoRemovePeriod > 0n) {
+				AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, Number(queue.autoRemovePeriod) * 1000);
+			}
+
+			DisplayUtils.requestDisplayUpdate({ store, queueId: queue.id });
+
+			return insertedMember;
+		});
+	}
+
 	export async function getMemberDisplayLine(store: Store, queue: DbQueue, userId: Snowflake) {
 		const { position, member } = getMemberPosition(store, queue, userId);
 		return new EmbedBuilder()
@@ -410,6 +451,11 @@ export namespace MemberUtils {
 		});
 
 		await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");
+
+		// Schedule auto-remove if configured
+		if (queue.autoRemovePeriod && queue.autoRemovePeriod > 0n) {
+			AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, Number(queue.autoRemovePeriod) * 1000);
+		}
 
 		return insertedMember;
 	}

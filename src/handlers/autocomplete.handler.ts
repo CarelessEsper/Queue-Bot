@@ -1,4 +1,6 @@
 import { OPTIONS } from "../options/options.loader.ts";
+import { PullQueuesOption } from "../options/options/pull-queues.option.ts";
+import { QueuesOption } from "../options/options/queues.option.ts";
 import { type Handler, MAX_SLASH_COMMAND_OPTIONS, type UIOption } from "../types/handler.types.ts";
 import type { AutocompleteInteraction, BaseInteraction } from "../types/interaction.types.ts";
 import { CHOICE_ALL, CHOICE_SOME } from "../types/parsing.types.ts";
@@ -16,7 +18,15 @@ export class AutocompleteHandler implements Handler {
 		const focusedOption = this.inter.options.getFocused(true);
 		const lowerSearchText = focusedOption.value.toLowerCase();
 
-		const option = OPTIONS.get(focusedOption.name);
+		// Use the pull-specific queues option when autocompleting /pull's queues field
+		// so that tag-restricted queues are filtered out for the current forum thread.
+		let option = OPTIONS.get(focusedOption.name);
+		if (
+			focusedOption.name === QueuesOption.ID &&
+			(this.inter as any).commandName === "pull"
+		) {
+			option = new PullQueuesOption();
+		}
 
 		const suggestions = await option.getAutocompletions({ inter: this.inter, lowerSearchText }) as UIOption[];
 		suggestions.sort((a, b) => a.name.localeCompare(b.name));
