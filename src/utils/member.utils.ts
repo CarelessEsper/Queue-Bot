@@ -19,6 +19,7 @@ import { MemberRemovalReason, PullMessageDisplayType } from "../types/db.types.t
 import type { MemberDeleteBy } from "../types/member.types.ts";
 import type { ArrayOrCollection } from "../types/misc.types.ts";
 import { NotificationAction } from "../types/notification.types.ts";
+import { UndoPullButton } from "../buttons/buttons/undo-pull.button.ts";
 import { BlacklistUtils } from "./blacklist.utils.ts";
 import { AutoRemoveUtils } from "./auto-remove.utils.ts";
 import { DisplayUtils } from "./display.utils.ts";
@@ -160,23 +161,42 @@ export namespace MemberUtils {
 				const messageToSend = await describePulledMembers(store, queue, deleted, reason);
 				let link;
 
+				// Build undo button row for pulls (only when there's an interaction and members were actually deleted)
+				const undoRow = (reason === MemberRemovalReason.Pulled && store.inter && deleted.length > 0)
+					? UndoPullButton.buildRow(
+						store.guild.id,
+						queue.id,
+						deleted.map(m => m.userId)
+					)
+					: null;
+
+				if (undoRow) {
+					messageToSend.components = [undoRow as any];
+				}
+
 				if (messageChannelId && queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
 					const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
 					if (messageChannel) {
 						const sentMessage = await messageChannel.send(messageToSend).catch(() => null);
-						LoggingUtils.log(store, true, sentMessage).catch(() => null);
+						if (reason === MemberRemovalReason.Pulled) {
+							LoggingUtils.logPull(store, queue, deleted, sentMessage).catch(() => null);
+						}
+						else {
+							LoggingUtils.log(store, true, sentMessage).catch(() => null);
+						}
 						link = sentMessage?.url;
 					}
-					await store.inter.respond(`${upperFirst(reason)}.`, false);
+					await store.inter?.deleteReply().catch(() => null);
 				}
 				else if (queue.pullMessageDisplayType === PullMessageDisplayType.Private) {
 					if (store.inter) {
-						// logs as part of respond
-						await store.inter.respond(messageToSend, true);
-						link = store.inter.channel.url;
+						const sentMessage = await store.inter.respond(messageToSend, true);
+						if (reason === MemberRemovalReason.Pulled) {
+							LoggingUtils.logPull(store, queue, deleted, sentMessage).catch(() => null);
+						}
+						link = sentMessage?.url;
 					}
 					else {
-						// log without responding
 						LoggingUtils.log(store, true, messageToSend).catch(() => null);
 					}
 				}
@@ -290,28 +310,25 @@ export namespace MemberUtils {
 	}
 
 	/**
-	 * Restores a previously-pulled member to the front of the queue by inserting
-	 * them with a fixed positionTime of 0n, which sorts before all other members.
+	 * Restores a previously-pulled member to the queue with priority order 0,
+	 * placing them ahead of all other members while respecting the normal sort order.
 	 */
 	export async function restoreMember(options: {
 		store: Store,
 		queue: DbQueue,
 		jsMember: GuildMember,
-		positionTime: bigint,
 		message?: string,
 	}) {
-		const { store, queue, jsMember, positionTime, message } = options;
+		const { store, queue, jsMember, message } = options;
 
 		return await db.transaction(async () => {
-			const priorityOrder = PriorityUtils.getMemberPriority(store, queue.id, jsMember);
-
 			const insertedMember = store.insertMember({
 				guildId: store.guild.id,
 				queueId: queue.id,
 				userId: jsMember.id,
 				message,
-				priorityOrder,
-				positionTime,
+				priorityOrder: 0n,
+				positionTime: BigInt(Date.now()),
 			});
 
 			await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");

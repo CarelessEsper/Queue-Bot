@@ -6,6 +6,7 @@ import { JoinButton } from "./buttons/join.button.ts";
 import { LeaveButton } from "./buttons/leave.button.ts";
 import { MyPositionsButton } from "./buttons/my-positions.button.ts";
 import { PullButton } from "./buttons/pull.button.ts";
+import { UndoPullButton } from "./buttons/undo-pull.button.ts";
 
 export const BUTTONS = new Collection<string, Button>([
 	[ExtendStayButton.ID, new ExtendStayButton()],
@@ -13,4 +14,5 @@ export const BUTTONS = new Collection<string, Button>([
 	[LeaveButton.ID, new LeaveButton()],
 	[MyPositionsButton.ID, new MyPositionsButton()],
 	[PullButton.ID, new PullButton()],
+	[UndoPullButton.ID, new UndoPullButton()],
 ]);

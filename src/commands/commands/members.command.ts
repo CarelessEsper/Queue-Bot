@@ -197,13 +197,11 @@ export class MembersCommand extends AdminCommand {
 		const jsMember = await inter.store.jsMember(user.id);
 		if (!jsMember) return;
 
-		// Insert with positionTime = 0n so they sort to the absolute front
-		// (before all existing members regardless of priority)
+		// Insert with priorityOrder = 0n so they sort ahead of all other members
 		await MemberUtils.restoreMember({
 			store: inter.store,
 			queue,
 			jsMember,
-			positionTime: 0n,
 			message: archived.message,
 		});
 

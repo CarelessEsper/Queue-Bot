@@ -1,5 +1,6 @@
-import { EmbedBuilder, type GuildTextBasedChannel, Message } from "discord.js";
+import { EmbedBuilder, type GuildTextBasedChannel, Message, userMention } from "discord.js";
 
+import type { DbMember, DbQueue } from "../../db/schema.ts";
 import type { Store } from "../../db/store.ts";
 import { Scope } from "../../types/db.types.ts";
 import { memberNameMention } from "../string.utils.ts";
@@ -44,5 +45,33 @@ export namespace LoggingUtils {
 		}
 
 		return await logChannel.send({ embeds }).catch(null);
+	}
+
+	/**
+	 * Logs a pull action as a compact single-line message:
+	 * `@admin (ID adminid) pulled X users from **QueueName**. <source link> @member1, @member2...`
+	 */
+	export async function logPull(
+		store: Store,
+		queue: DbQueue,
+		pulledMembers: DbMember[],
+		sourceMessage: Message | null,
+	) {
+		const { logChannelId, logScope } = store.dbGuild();
+		if (!(logChannelId && logScope)) return;
+		if (![Scope.Admin, Scope.All].includes(logScope)) return;
+
+		const logChannel = await store.jsChannel(logChannelId) as GuildTextBasedChannel;
+		if (!logChannel) return;
+
+		const adminId = store.inter?.user?.id;
+		const adminStr = adminId ? `${userMention(adminId)} (ID ${adminId})` : "Unknown";
+		const count = pulledMembers.length;
+		const membersStr = pulledMembers.map(m => userMention(m.userId)).join(", ");
+		const linkStr = sourceMessage?.url ?? "";
+
+		const content = `${adminStr} pulled \`${count}\` user${count === 1 ? "" : "s"} from **${queue.name}**. ${linkStr} ${membersStr}`.trim();
+
+		return await logChannel.send({ content }).catch(null);
 	}
 }
