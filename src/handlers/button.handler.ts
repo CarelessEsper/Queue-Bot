@@ -26,11 +26,14 @@ export class ButtonHandler implements Handler {
 
 			this.inter.respond = (message: InteractionReplyOptions | string, log = false) => InteractionUtils.respond(this.inter, button.adminOnly, message, log);
 
-			if (button.adminOnly) {
-				AdminUtils.verifyIsAdmin(this.inter.store, this.inter.member);
+			// Guild-only checks — skip for DM interactions (e.g. extend-stay, leave-queue)
+			if (this.inter.guild) {
+				if (button.adminOnly) {
+					AdminUtils.verifyIsAdmin(this.inter.store, this.inter.member);
+				}
+				incrementGuildStat(this.inter.guildId, "buttonsReceived");
 			}
 
-			incrementGuildStat(this.inter.guildId, "buttonsReceived");
 			await button.handle(this.inter);
 		}
 	}

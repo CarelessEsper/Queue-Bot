@@ -14,6 +14,7 @@ import {
 import { compact, concat, shuffle } from "lodash-es";
 
 import { ExtendStayButton } from "../buttons/buttons/extend-stay.button.ts";
+import { LeaveQueueButton } from "../buttons/buttons/leave-queue.button.ts";
 
 import { Queries } from "../db/queries.ts";
 import { Store } from "../db/store.ts";
@@ -38,8 +39,11 @@ export namespace ClientHandler {
 		if (inter.guild) {
 			await new InteractionHandler(inter).handle();
 		}
-		else if (inter.isButton() && inter.customId.startsWith(ExtendStayButton.ID + ":")) {
-			// Extend-stay buttons are sent via DM and have no guild context
+		else if (inter.isButton() && (
+			inter.customId.startsWith(ExtendStayButton.ID + ":") ||
+			inter.customId.startsWith(LeaveQueueButton.ID + ":")
+		)) {
+			// These buttons are sent via DM and have no guild context
 			await new InteractionHandler(inter).handle();
 		}
 		else if ("reply" in inter) {

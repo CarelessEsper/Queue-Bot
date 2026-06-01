@@ -5,6 +5,7 @@ import { Queries } from "../db/queries.ts";
 import { Store } from "../db/store.ts";
 import { MemberRemovalReason } from "../types/db.types.ts";
 import { ExtendStayButton } from "../buttons/buttons/extend-stay.button.ts";
+import { LeaveQueueButton } from "../buttons/buttons/leave-queue.button.ts";
 import { ClientUtils } from "./client.utils.ts";
 import { MemberUtils } from "./member.utils.ts";
 import { queueMention, timeMention } from "./string.utils.ts";
@@ -67,6 +68,11 @@ export namespace AutoRemoveUtils {
 		const allQueues = Queries.selectAllQueues();
 		const now = BigInt(Date.now());
 
+		// Stagger expired members so they don't all fire at once on restart,
+		// which would cause a burst of DM sends and hit Discord rate-limits.
+		const STAGGER_INTERVAL_MS = 500;
+		let expiredStaggerMs = 0;
+
 		for (const queue of allQueues) {
 			if (!queue.autoRemovePeriod || queue.autoRemovePeriod <= 0n) continue;
 
@@ -77,8 +83,9 @@ export namespace AutoRemoveUtils {
 				const remaining = periodMs - elapsed;
 
 				if (remaining <= 0) {
-					// Already expired — prompt immediately
-					schedule(queue.guildId, queue.id, member.userId, 0);
+					// Already expired — spread these out to avoid a thundering herd
+					schedule(queue.guildId, queue.id, member.userId, expiredStaggerMs);
+					expiredStaggerMs += STAGGER_INTERVAL_MS;
 				}
 				else {
 					schedule(queue.guildId, queue.id, member.userId, remaining);
@@ -120,14 +127,19 @@ export namespace AutoRemoveUtils {
 				.setLabel("Extend Stay")
 				.setStyle(ButtonStyle.Success);
 
-			const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton);
+			const leaveButton = new ButtonBuilder()
+				.setCustomId(LeaveQueueButton.buildCustomId(guildId, queueId, userId))
+				.setLabel("Leave Queue")
+				.setStyle(ButtonStyle.Secondary);
+
+			const row = new ActionRowBuilder<ButtonBuilder>().addComponents(extendButton, leaveButton);
 
 			const embed = new EmbedBuilder()
 				.setColor(queue.color as any)
-				.setTitle("Your queue time has expired")
+				.setTitle("Your queue time will expire soon")
 				.setDescription(
-					`Your time in the ${queueMention(queue)} queue has expired.\n\n` +
-					`Click **Extend Stay** within 2 minutes to stay in the queue for another **${timeMention(queue.autoRemovePeriod)}**, ` +
+					`Your time in the ${queueMention(queue)} queue will expire in 2 minutes.\n\n` +
+					`Click **Extend Stay** to stay in the queue for another **${timeMention(queue.autoRemovePeriod)}**, ` +
 					`or you will be automatically removed.`
 				);
 
@@ -147,7 +159,7 @@ export namespace AutoRemoveUtils {
 					embeds: [
 						new EmbedBuilder()
 							.setColor(queue.color as any)
-							.setDescription(`⏰ Time's up — you have been removed from the ${queueMention(queue)} queue.`),
+							.setDescription(`Time's up — you have been removed from the ${queueMention(queue)} queue. You will need to rejoin the queue to continue.`),
 					],
 					components: [],
 				}).catch(() => null);

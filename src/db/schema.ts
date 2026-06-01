@@ -65,6 +65,7 @@ export const QUEUE_TABLE = sqliteTable("queue", ({
 	requireMessageToJoin: integer("require_message_to_join", { mode: "boolean" }).default(false),
 	roleInQueueId: text("role_in_queue_id").$type<Snowflake>(),
 	roleOnPullId: text("role_on_pull_id").$type<Snowflake>(),
+	roleToRemoveOnJoinId: text("role_to_remove_on_join_id").$type<Snowflake>(),
 	size: integer("size").$type<bigint>(),
 	timestampType: text("time_display_type").$type<TimestampType>().default(TimestampType.Off),
 	voiceDestinationChannelId: text("voice_destination_channel_id").$type<Snowflake>(),

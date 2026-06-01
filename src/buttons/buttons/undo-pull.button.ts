@@ -1,10 +1,9 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type GuildTextBasedChannel, userMention } from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, userMention } from "discord.js";
 
 import { AdminButton } from "../../types/button.types.ts";
-import { MemberRemovalReason, PullMessageDisplayType } from "../../types/db.types.ts";
+import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { ButtonInteraction } from "../../types/interaction.types.ts";
 import { MemberUtils } from "../../utils/member.utils.ts";
-import { LoggingUtils } from "../../utils/message-utils/logging.utils.ts";
 import { queueMention } from "../../utils/string.utils.ts";
 
 export class UndoPullButton extends AdminButton {
@@ -61,7 +60,7 @@ export class UndoPullButton extends AdminButton {
 		const button = new ButtonBuilder()
 			.setCustomId(customId)
 			.setLabel("Undo Pull")
-			.setStyle(ButtonStyle.Secondary);
+			.setStyle(ButtonStyle.Danger);
 		return new ActionRowBuilder<ButtonBuilder>().addComponents(button);
 	}
 
@@ -99,34 +98,48 @@ export class UndoPullButton extends AdminButton {
 			}).catch(() => null);
 
 			restored.push(userId);
+
+			// DM the member to let them know they were placed back in the queue
+			const dmEmbed = new EmbedBuilder()
+				.setColor(queue.color as any)
+				.setDescription(`↩️ You have been restored to the front of the ${queueMention(queue)} queue.`);
+			jsMember.user.send({ embeds: [dmEmbed] }).catch(() => null);
 		}
 
 		if (restored.length === 0) {
+			// Disable the button and show the failure inline
+			const disabledButton = new ButtonBuilder()
+				.setCustomId(inter.customId)
+				.setLabel("Undo Pull")
+				.setStyle(ButtonStyle.Secondary)
+				.setDisabled(true);
+			await inter.message.edit({
+				components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton).toJSON()],
+			}).catch(() => null);
 			await inter.respond("No members could be restored (they may have already rejoined or left the server).");
 			return;
 		}
 
 		const membersStr = restored.map(userId => `- ${userMention(userId)}`).join("\n");
 
-		const embed = new EmbedBuilder()
+		const resultEmbed = new EmbedBuilder()
 			.setColor(queue.color as any)
 			.setTitle(queueMention(queue))
-			.setDescription(`Restored to their original position in the queue:\n${membersStr}`);
+			.setDescription(`↩️ Restored to the front of the queue:\n${membersStr}`);
 
-		const messageToSend = { embeds: [embed], components: [] };
+		// Disable the button and edit the result into the original message
+		const disabledButton = new ButtonBuilder()
+			.setCustomId(inter.customId)
+			.setLabel("Undo Pull")
+			.setStyle(ButtonStyle.Secondary)
+			.setDisabled(true);
 
-		// Remove the undo button from the original pull message
-		await inter.editReply({ components: [] }).catch(() => null);
+		await inter.message.edit({
+			embeds: [...inter.message.embeds, resultEmbed],
+			components: [new ActionRowBuilder<ButtonBuilder>().addComponents(disabledButton).toJSON()],
+		}).catch(() => null);
 
-		if (queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
-			const channel = inter.channel as GuildTextBasedChannel;
-			if (channel) {
-				const sentMessage = await channel.send(messageToSend).catch(() => null);
-				LoggingUtils.log(store, true, sentMessage).catch(() => null);
-			}
-		}
-		else {
-			await inter.respond(messageToSend, true);
-		}
+		// Acknowledge the interaction silently
+		await inter.deferUpdate().catch(() => null);
 	}
 }

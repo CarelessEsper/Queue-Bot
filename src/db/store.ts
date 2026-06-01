@@ -376,7 +376,7 @@ export class Store {
 	//                           Updates
 	// ====================================================================
 
-	updateGuild(guild: { logChannelId: Snowflake, logScope: Scope }) {
+	updateGuild(guild: { logChannelId?: Snowflake, logScope?: Scope }) {
 		// Ensure the guild is in the database
 		this.insertGuild({ guildId: this.guild.id });
 		return db

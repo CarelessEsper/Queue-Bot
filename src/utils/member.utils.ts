@@ -469,6 +469,14 @@ export namespace MemberUtils {
 
 		await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");
 
+		// Remove the configured "role to remove on join" if the member has it
+		if (queue.roleToRemoveOnJoinId && jsMember.roles.cache.has(queue.roleToRemoveOnJoinId)) {
+			await modifyMemberRoles(store, jsMember.id, queue.roleToRemoveOnJoinId, "remove").catch(() => null);
+		}
+
+		// Log the join event
+		LoggingUtils.logJoin(store, queue, insertedMember).catch(() => null);
+
 		// Schedule auto-remove if configured
 		if (queue.autoRemovePeriod && queue.autoRemovePeriod > 0n) {
 			AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, Number(queue.autoRemovePeriod) * 1000);

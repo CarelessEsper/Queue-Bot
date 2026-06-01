@@ -16,8 +16,6 @@ import { QueuesCommand } from "./commands/queues.command.ts";
 import { ScheduleCommand } from "./commands/schedule.command.ts";
 import { ShowCommand } from "./commands/show.command.ts";
 import { ShuffleCommand } from "./commands/shuffle.command.ts";
-import { ToMeCommand } from "./commands/to-me.command.ts";
-import { VoiceCommand } from "./commands/voice.command.ts";
 import { WhitelistCommand } from "./commands/whitelist.command.ts";
 
 export const COMMANDS = new Collection<string, Command>([
@@ -36,7 +34,5 @@ export const COMMANDS = new Collection<string, Command>([
 	[ScheduleCommand.ID, new ScheduleCommand()],
 	[ShowCommand.ID, new ShowCommand()],
 	[ShuffleCommand.ID, new ShuffleCommand()],
-	[ToMeCommand.ID, new ToMeCommand()],
-	[VoiceCommand.ID, new VoiceCommand()],
 	[WhitelistCommand.ID, new WhitelistCommand()],
 ]);

@@ -25,6 +25,7 @@ import { RejoinGracePeriodOption } from "../../options/options/rejoin-grace-peri
 import { RequireMessageToJoinOption } from "../../options/options/require-message-to-join.option.ts";
 import { RoleInQueueOption } from "../../options/options/role-in-queue.option.ts";
 import { RoleOnPullOption } from "../../options/options/role-on-pull.option.ts";
+import { RoleToRemoveOnJoinOption } from "../../options/options/role-to-remove-on-join.option.ts";
 import { SizeOption } from "../../options/options/size.option.ts";
 import { TagIdOption } from "../../options/options/tag-id.option.ts";
 import { TimestampTypeOption } from "../../options/options/timestamp-type.option.ts";
@@ -105,6 +106,7 @@ export class QueuesCommand extends AdminCommand {
 				autoRemovePeriod: timeMention,
 				roleInQueueId: roleMention,
 				roleOnPullId: roleMention,
+				roleToRemoveOnJoinId: roleMention,
 				rejoinCooldownPeriod: timeMention,
 				rejoinGracePeriod: timeMention,
 			},
@@ -138,6 +140,7 @@ export class QueuesCommand extends AdminCommand {
 		requireMessageToJoin: new RequireMessageToJoinOption({ description: "Require a message to join the queue" }),
 		roleInQueue: new RoleInQueueOption({ description: "Role to assign members of the queue" }),
 		roleOnPull: new RoleOnPullOption({ description: "Role to assign members when they are pulled" }),
+		roleToRemoveOnJoin: new RoleToRemoveOnJoinOption({ description: "Role to remove from members when they join the queue" }),
 		size: new SizeOption({ description: "Limit the size of the queue" }),
 		tagId: new TagIdOption({ description: "Forum tag ID required to pull from this queue (leave blank to disable)" }),
 		timestampType: new TimestampTypeOption({ description: "Format of timestamps on displays" }),
@@ -167,6 +170,7 @@ export class QueuesCommand extends AdminCommand {
 				requireMessageToJoin: QueuesCommand.ADD_OPTIONS.requireMessageToJoin.get(inter),
 				roleInQueueId: QueuesCommand.ADD_OPTIONS.roleInQueue.get(inter)?.id,
 				roleOnPullId: QueuesCommand.ADD_OPTIONS.roleOnPull.get(inter)?.id,
+				roleToRemoveOnJoinId: QueuesCommand.ADD_OPTIONS.roleToRemoveOnJoin.get(inter)?.id,
 				size: QueuesCommand.ADD_OPTIONS.size.get(inter),
 				tagId: QueuesCommand.ADD_OPTIONS.tagId.get(inter),
 				timestampType: QueuesCommand.ADD_OPTIONS.timestampType.get(inter),
@@ -206,6 +210,7 @@ export class QueuesCommand extends AdminCommand {
 		requireMessageToJoin: new RequireMessageToJoinOption({ description: "Require a message to join the queue" }),
 		roleInQueue: new RoleInQueueOption({ description: "Role to assign members of the queue" }),
 		roleOnPull: new RoleOnPullOption({ description: "Role to assign members when they are pulled" }),
+		roleToRemoveOnJoin: new RoleToRemoveOnJoinOption({ description: "Role to remove from members when they join the queue" }),
 		size: new SizeOption({ description: "Limit the size of the queue" }),
 		tagId: new TagIdOption({ description: "Forum tag ID required to pull from this queue (leave blank to disable)" }),
 		timestampType: new TimestampTypeOption({ description: "How to display timestamps" }),
@@ -234,6 +239,7 @@ export class QueuesCommand extends AdminCommand {
 			requireMessageToJoin: QueuesCommand.SET_OPTIONS.requireMessageToJoin.get(inter),
 			roleInQueueId: QueuesCommand.SET_OPTIONS.roleInQueue.get(inter)?.id,
 			roleOnPullId: QueuesCommand.SET_OPTIONS.roleOnPull.get(inter)?.id,
+			roleToRemoveOnJoinId: QueuesCommand.SET_OPTIONS.roleToRemoveOnJoin.get(inter)?.id,
 			size: QueuesCommand.SET_OPTIONS.size.get(inter),
 			tagId: QueuesCommand.SET_OPTIONS.tagId.get(inter),
 			timestampType: QueuesCommand.SET_OPTIONS.timestampType.get(inter),
@@ -277,6 +283,7 @@ export class QueuesCommand extends AdminCommand {
 			{ name: RequireMessageToJoinOption.ID, value: QUEUE_TABLE.requireMessageToJoin.name },
 			{ name: RoleInQueueOption.ID, value: QUEUE_TABLE.roleInQueueId.name },
 			{ name: RoleOnPullOption.ID, value: QUEUE_TABLE.roleOnPullId.name },
+			{ name: RoleToRemoveOnJoinOption.ID, value: QUEUE_TABLE.roleToRemoveOnJoinId.name },
 			{ name: SizeOption.ID, value: QUEUE_TABLE.size.name },
 			{ name: TagIdOption.ID, value: QUEUE_TABLE.tagId.name },
 			{ name: TimestampTypeOption.ID, value: QUEUE_TABLE.timestampType.name },

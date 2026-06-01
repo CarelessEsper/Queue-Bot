@@ -6,6 +6,7 @@ import type { Store } from "../db/store.ts";
 import type { ArrayOrCollection } from "../types/misc.types.ts";
 import { DisplayUtils } from "./display.utils.ts";
 import { MemberUtils } from "./member.utils.ts";
+import { LoggingUtils } from "./message-utils/logging.utils.ts";
 import { map } from "./misc.utils.ts";
 
 export namespace QueueUtils {
@@ -22,6 +23,9 @@ export namespace QueueUtils {
 	}
 
 	export async function updateQueues(store: Store, queues: ArrayOrCollection<bigint, DbQueue>, update: Partial<DbQueue>) {
+		// Snapshot before state for logging
+		const beforeMap = new Map(map(queues, q => [q.id, { ...q }] as [bigint, DbQueue]));
+
 		return await db.transaction(async () => {
 			const updatedQueues = compact(map(queues, queue => store.updateQueue({ id: queue.id, ...update })));
 			const updatedQueueIds = updatedQueues.map(queue => queue.id);
@@ -30,6 +34,14 @@ export namespace QueueUtils {
 
 			if (update.roleInQueueId) {
 				await QueueUtils.setRoleInQueue(store, updatedQueues);
+			}
+
+			// Log before/after for each updated queue (fire-and-forget)
+			for (const after of updatedQueues) {
+				const before = beforeMap.get(after.id);
+				if (before) {
+					LoggingUtils.logQueueUpdate(store, before, after).catch(() => null);
+				}
 			}
 
 			return { updatedQueues };
