@@ -28,17 +28,28 @@ export namespace ClientUtils {
 	export async function registerCommands() {
 		try {
 			console.time(`Registered ${COMMANDS.size} commands with server`);
-			const commandsPutRoute = process.env.GUILD_ID
-				? Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID)
-				: Routes.applicationCommands(process.env.CLIENT_ID);
+			const guildId = process.env.GUILD_ID?.trim() || null;
+			const rest = new REST().setToken(process.env.TOKEN);
 			const commandsJSON = COMMANDS.map(c => c.data.toJSON());
-			await new REST()
-				.setToken(process.env.TOKEN)
-				.put(commandsPutRoute, { body: commandsJSON });
 
-			LIVE_COMMANDS = process.env.GUILD_ID
-				? await CLIENT.application.commands.fetch({ guildId: process.env.GUILD_ID })
-				: await CLIENT.application.commands.fetch();
+			if (guildId) {
+				// Guild-scoped registration
+				await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, guildId), { body: commandsJSON });
+				LIVE_COMMANDS = await CLIENT.application.commands.fetch({ guildId });
+			}
+			else {
+				// Global registration — first clear any stale guild-scoped commands from all guilds
+				const guilds = await CLIENT.guilds.fetch();
+				await Promise.all(
+					guilds.map(guild =>
+						rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, guild.id), { body: [] }).catch(() => null)
+					)
+				);
+
+				await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commandsJSON });
+				LIVE_COMMANDS = await CLIENT.application.commands.fetch();
+			}
+
 			console.timeEnd(`Registered ${COMMANDS.size} commands with server`);
 		}
 		catch (e) {
