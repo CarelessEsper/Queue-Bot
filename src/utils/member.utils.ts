@@ -19,7 +19,6 @@ import { MemberRemovalReason, PullMessageDisplayType } from "../types/db.types.t
 import type { MemberDeleteBy } from "../types/member.types.ts";
 import type { ArrayOrCollection } from "../types/misc.types.ts";
 import { NotificationAction } from "../types/notification.types.ts";
-import { UndoPullButton } from "../buttons/buttons/undo-pull.button.ts";
 import { BlacklistUtils } from "./blacklist.utils.ts";
 import { AutoRemoveUtils } from "./auto-remove.utils.ts";
 import { DisplayUtils } from "./display.utils.ts";
@@ -161,19 +160,6 @@ export namespace MemberUtils {
 				const messageToSend = await describePulledMembers(store, queue, deleted, reason);
 				let link;
 
-				// Build undo button row for pulls (only when there's an interaction and members were actually deleted)
-				const undoRow = (reason === MemberRemovalReason.Pulled && store.inter && deleted.length > 0)
-					? UndoPullButton.buildRow(
-						store.guild.id,
-						queue.id,
-						deleted.map(m => m.userId)
-					)
-					: null;
-
-				if (undoRow) {
-					messageToSend.components = [undoRow as any];
-				}
-
 				if (messageChannelId && queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
 					const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
 					if (messageChannel) {
@@ -240,6 +226,33 @@ export namespace MemberUtils {
 				}
 			}
 		});
+
+		// When members are pulled, silently remove them from all other queues they belong to.
+		// This does not apply to manual leaves or auto-remove expiry.
+		if (reason === MemberRemovalReason.Pulled && deletedMembers.length > 0) {
+			const pulledUserIds = [...new Set(deletedMembers.map(m => m.userId))];
+			const pulledQueueIds = new Set(queues.map(q => q.id));
+
+			// Find all other queues these users are still in
+			const allQueues = [...store.dbQueues().values()];
+			for (const otherQueue of allQueues) {
+				if (pulledQueueIds.has(otherQueue.id)) continue;
+
+				const usersInOtherQueue = pulledUserIds.filter(uid =>
+					store.dbMembers().some(m => m.queueId === otherQueue.id && m.userId === uid)
+				);
+				if (usersInOtherQueue.length === 0) continue;
+
+				// Remove silently — no notification, no pull message
+				usersInOtherQueue.forEach(uid => {
+					store.deleteMember({ queueId: otherQueue.id, userId: uid }, MemberRemovalReason.Kicked);
+					modifyMemberRoles(store, uid, otherQueue.roleInQueueId, "remove").catch(() => null);
+					AutoRemoveUtils.cancel(otherQueue.id, uid);
+				});
+
+				DisplayUtils.requestDisplayUpdate({ store, queueId: otherQueue.id });
+			}
+		}
 
 		return deletedMembers;
 	}
@@ -358,11 +371,9 @@ export namespace MemberUtils {
 			.map(mention => `- ${mention}`)
 			.join("\n");
 
-		let description = "";
-		if (queue.pullMessage) {
-			description += `> ${queue.pullMessage}\n\n`;
-		}
-		description += pulledMembersOfQueue.length ? `${upperFirst(reason)} from queue:\n${membersStr}` : `No members were ${reason} from queue.`;
+		const description = pulledMembersOfQueue.length
+			? `${upperFirst(reason)} from queue:\n${membersStr}`
+			: `No members were ${reason} from queue.`;
 
 		return { embeds: [new EmbedBuilder().setTitle(queueMention(queue)).setColor(queue.color).setDescription(description)] };
 	}
