@@ -36,9 +36,8 @@ export namespace MemberUtils {
 		users: { id: Snowflake }[],
 		queues: Collection<bigint, DbQueue>,
 		force?: boolean,
-		dmMember?: boolean,
 	}) {
-		const { store, users, queues, force, dmMember } = options;
+		const { store, users, queues, force } = options;
 
 		const insertedMembers = compact(
 			await db.transaction(async () => {
@@ -63,18 +62,7 @@ export namespace MemberUtils {
 		});
 
 		if (store.inter) {
-			const message = await store.inter.respond(`Added ${usersMention(insertedMembers)} to ${queuesMention(queues)} queue${queues.size > 1 ? "s" : ""}.`, true);
-			if (dmMember) {
-				for (const queue of queues.values()) {
-					await NotificationUtils.dmToMembers({
-						store,
-						queue,
-						action: NotificationAction.ADDED_TO_QUEUE,
-						members: insertedMembers,
-						link: message.url,
-					});
-				}
-			}
+			await store.inter.respond(`Added ${usersMention(insertedMembers)} to ${queuesMention(queues)} queue${queues.size > 1 ? "s" : ""}.`, true);
 		}
 		return insertedMembers;
 	}
@@ -126,9 +114,8 @@ export namespace MemberUtils {
 		messageChannelId?: Snowflake;
 		destinationChannelId?: Snowflake;
 		force?: boolean,
-		dmMember?: boolean,
 	}) {
-		const { store, reason, by, messageChannelId, force, dmMember } = options;
+		const { store, reason, by, messageChannelId, force } = options;
 		const queues = options.queues instanceof Collection ? [...options.queues.values()] : options.queues;
 		const { userId, userIds, roleId, count } = by ?? {} as any;
 		const deletedMembers: DbMember[] = [];
@@ -187,12 +174,15 @@ export namespace MemberUtils {
 					}
 				}
 
-				if (dmMember || (reason === MemberRemovalReason.Pulled && queue.dmOnPullToggle)) {
-					// Notify of pull or kick
-					const action = (reason === MemberRemovalReason.Pulled)
-						? NotificationAction.PULLED_FROM_QUEUE
-						: NotificationAction.KICKED_FROM_QUEUE;
-					await NotificationUtils.dmToMembers({ store, queue, action, members: deleted, link });
+				if (reason === MemberRemovalReason.Pulled && queue.dmOnPullToggle) {
+					// Notify pulled members in the source channel by tagging them
+					await NotificationUtils.notifyMembers({
+						store,
+						queue,
+						action: NotificationAction.PULLED_FROM_QUEUE,
+						members: deleted,
+						messageChannelId,
+					});
 				}
 			}
 

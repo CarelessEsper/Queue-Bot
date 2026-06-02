@@ -3,7 +3,6 @@ import { compact } from "lodash-es";
 
 import type { DbQueue } from "../../db/schema.ts";
 import { UserOption } from "../../options/base-option.ts";
-import { DmMemberOption } from "../../options/options/dm-member.option.ts";
 import { MembersOption } from "../../options/options/members.option.ts";
 import { MessageOption } from "../../options/options/message.option.ts";
 import { QueueOption } from "../../options/options/queue.option.ts";
@@ -87,7 +86,6 @@ export class MembersCommand extends AdminCommand {
 		user3: new UserOption({ id: "user_3", description: "User to add" }),
 		user4: new UserOption({ id: "user_4", description: "User to add" }),
 		user5: new UserOption({ id: "user_5", description: "User to add" }),
-		dmMember: new DmMemberOption({ description: "Whether to directly message the member(s)" }),
 	};
 
 	static async members_add(inter: SlashInteraction) {
@@ -99,14 +97,12 @@ export class MembersCommand extends AdminCommand {
 			MembersCommand.ADD_OPTIONS.user4.get(inter),
 			MembersCommand.ADD_OPTIONS.user5.get(inter),
 		]);
-		const dmMember = MembersCommand.ADD_OPTIONS.dmMember.get(inter);
 
 		await MemberUtils.insertUsers({
 			store: inter.store,
 			users,
 			queues,
 			force: true,
-			dmMember,
 		});
 	}
 
@@ -137,13 +133,11 @@ export class MembersCommand extends AdminCommand {
 	static readonly DELETE_OPTIONS = {
 		queues: new QueuesOption({ required: true, description: "Queue(s) to kick members from" }),
 		members: new MembersOption({ required: true, description: "Members to kick" }),
-		dmMember: new DmMemberOption({ description: "Whether to directly message the member(s)" }),
 	};
 
 	static async members_delete(inter: SlashInteraction) {
 		const queues = await MembersCommand.DELETE_OPTIONS.queues.get(inter);
 		const members = await MembersCommand.DELETE_OPTIONS.members.get(inter);
-		const dmMember = MembersCommand.DELETE_OPTIONS.dmMember.get(inter);
 
 		if (MembersCommand.DELETE_OPTIONS.members.getRaw(inter) === ChoiceType.ALL) {
 			const confirmed = await inter.promptConfirmOrCancel(`Are you sure you want to remove all members from the ${queuesMention(queues)} queue${queues.size > 1 ? "s" : ""}?`);
@@ -160,7 +154,6 @@ export class MembersCommand extends AdminCommand {
 			by: { userIds: members.map(member => member.userId) },
 			messageChannelId: inter.channel.id,
 			force: true,
-			dmMember,
 		});
 	}
 
