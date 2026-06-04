@@ -200,7 +200,7 @@ export namespace AutoRemoveUtils {
 		await MemberUtils.deleteMembers({
 			store,
 			queues: [queue],
-			reason: MemberRemovalReason.Kicked,
+			reason: MemberRemovalReason.Expired,
 			by: { userId },
 			force: true,
 		}).catch(e => console.error(`[AutoRemove] Failed to remove ${userId} from queue ${queue.id}:`, e));

@@ -120,13 +120,22 @@ export namespace MemberUtils {
 		const { userId, userIds, roleId, count } = by ?? {} as any;
 		const deletedMembers: DbMember[] = [];
 
+		// Track log messages from pulls so we can edit them after cross-queue removals
+		const pullLogMessages = new Map<string, Message>(); // userId -> log message
+
 		async function deleteMembersAndNotify(queue: DbQueue, userIds: Snowflake[], reason: MemberRemovalReason) {
+			// Capture positions before deletion so leave/pull logs can reference them
+			const shouldLogLeave = reason === MemberRemovalReason.Left || reason === MemberRemovalReason.Expired || reason === MemberRemovalReason.Kicked;
+			const queueMembersBefore = (shouldLogLeave || reason === MemberRemovalReason.Pulled)
+				? [...store.dbMembers().filter(m => m.queueId === queue.id).values()]
+				: [];
+			const positionMap = new Map(queueMembersBefore.map((m, i) => [m.userId, i + 1]));
+
 			const deleted: DbMember[] = compact(userIds.map(userId => store.deleteMember({ queueId: queue.id, userId }, reason)));
 
 			userIds.forEach(userId => modifyMemberRoles(store, userId, queue.roleInQueueId, "remove").catch(() => null));
 			// Cancel any pending auto-remove timers for deleted members
 			userIds.forEach(userId => AutoRemoveUtils.cancel(queue.id, userId));
-
 			// Pull members to the destination channel if they are in a voice channel
 			if (reason === MemberRemovalReason.Pulled) {
 				const destinationChannelId = options.destinationChannelId ?? queue.voiceDestinationChannelId;
@@ -146,31 +155,34 @@ export namespace MemberUtils {
 			if ([MemberRemovalReason.Pulled, MemberRemovalReason.Kicked].includes(reason)) {
 				const messageToSend = await describePulledMembers(store, queue, deleted, reason);
 				let link;
+				let sourceMessage: Message | null = null;
 
 				if (messageChannelId && queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
 					const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
 					if (messageChannel) {
-						const sentMessage = await messageChannel.send(messageToSend).catch(() => null);
-						if (reason === MemberRemovalReason.Pulled) {
-							LoggingUtils.logPull(store, queue, deleted, sentMessage).catch(() => null);
+						sourceMessage = await messageChannel.send(messageToSend).catch(() => null);
+						if (reason !== MemberRemovalReason.Pulled) {
+							LoggingUtils.log(store, true, sourceMessage).catch(() => null);
 						}
-						else {
-							LoggingUtils.log(store, true, sentMessage).catch(() => null);
-						}
-						link = sentMessage?.url;
+						link = sourceMessage?.url;
 					}
 					await store.inter?.deleteReply().catch(() => null);
 				}
 				else if (queue.pullMessageDisplayType === PullMessageDisplayType.Private) {
 					if (store.inter) {
-						const sentMessage = await store.inter.respond(messageToSend, true);
-						if (reason === MemberRemovalReason.Pulled) {
-							LoggingUtils.logPull(store, queue, deleted, sentMessage).catch(() => null);
-						}
-						link = sentMessage?.url;
+						sourceMessage = await store.inter.respond(messageToSend, true);
+						link = sourceMessage?.url;
 					}
 					else {
 						LoggingUtils.log(store, true, messageToSend).catch(() => null);
+					}
+				}
+
+				if (reason === MemberRemovalReason.Pulled) {
+					// Fire logPull immediately — we'll edit it later if cross-queue removals happen
+					const logMsg = await LoggingUtils.logPull(store, queue, deleted, sourceMessage, positionMap);
+					if (logMsg) {
+						deleted.forEach(m => pullLogMessages.set(m.userId, logMsg));
 					}
 				}
 
@@ -187,6 +199,14 @@ export namespace MemberUtils {
 			}
 
 			DisplayUtils.requestDisplayUpdate({ store, queueId: queue.id });
+
+			// Log leave events (voluntary or expired)
+			if (shouldLogLeave) {
+				for (const m of deleted) {
+					const pos = positionMap.get(m.userId) ?? 0;
+					LoggingUtils.logLeave(store, queue, m, pos, reason).catch(() => null);
+				}
+			}
 
 			deletedMembers.push(...deleted);
 		}
@@ -223,7 +243,9 @@ export namespace MemberUtils {
 			const pulledUserIds = [...new Set(deletedMembers.map(m => m.userId))];
 			const pulledQueueIds = new Set(queues.map(q => q.id));
 
-			// Find all other queues these users are still in
+			// secondaryLines collects text for editing the pull log message
+			const secondaryLines: string[] = [];
+
 			const allQueues = [...store.dbQueues().values()];
 			for (const otherQueue of allQueues) {
 				if (pulledQueueIds.has(otherQueue.id)) continue;
@@ -233,14 +255,32 @@ export namespace MemberUtils {
 				);
 				if (usersInOtherQueue.length === 0) continue;
 
-				// Remove silently — no notification, no pull message
+				const queueMembersBefore = [...store.dbMembers().filter(m => m.queueId === otherQueue.id).values()];
+				const positionMap = new Map(queueMembersBefore.map((m, i) => [m.userId, i + 1]));
+
 				usersInOtherQueue.forEach(uid => {
-					store.deleteMember({ queueId: otherQueue.id, userId: uid }, MemberRemovalReason.Kicked);
+					store.deleteMember({ queueId: otherQueue.id, userId: uid }, MemberRemovalReason.RemovedByPull);
 					modifyMemberRoles(store, uid, otherQueue.roleInQueueId, "remove").catch(() => null);
 					AutoRemoveUtils.cancel(otherQueue.id, uid);
+					const pos = positionMap.get(uid) ?? 0;
+					secondaryLines.push(`- ${userMention(uid)} in **${otherQueue.name}** at position \`${pos}\``);
 				});
 
 				DisplayUtils.requestDisplayUpdate({ store, queueId: otherQueue.id });
+			}
+
+			// Edit each unique pull log message to append the secondary removal field
+			if (secondaryLines.length > 0) {
+				const uniqueLogMessages = new Set(pullLogMessages.values());
+				for (const logMsg of uniqueLogMessages) {
+					const existingEmbed = logMsg.embeds[0];
+					if (!existingEmbed) continue;
+					const updatedEmbed = EmbedBuilder.from(existingEmbed).addFields({
+						name: "Automatically removed from queues",
+						value: secondaryLines.join("\n"),
+					});
+					logMsg.edit({ embeds: [updatedEmbed] }).catch(() => null);
+				}
 			}
 		}
 

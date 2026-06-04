@@ -2,7 +2,7 @@ import { channelMention, EmbedBuilder, type GuildTextBasedChannel, Message, role
 
 import type { DbMember, DbQueue } from "../../db/schema.ts";
 import type { Store } from "../../db/store.ts";
-import { Scope } from "../../types/db.types.ts";
+import { MemberRemovalReason, Scope } from "../../types/db.types.ts";
 import { memberNameMention } from "../string.utils.ts";
 
 export namespace LoggingUtils {
@@ -47,12 +47,6 @@ export namespace LoggingUtils {
 		return await logChannel.send({ embeds }).catch(null);
 	}
 
-	/**
-	 * Logs a member joining a queue as a clean single embed:
-	 * - Title: queue name
-	 * - Description: @mention + display name
-	 * - Footer: user ID + timestamp
-	 */
 	export async function logJoin(store: Store, queue: DbQueue, member: DbMember) {
 		const { logChannelId, logScope } = store.dbGuild();
 		if (!(logChannelId && logScope)) return;
@@ -66,15 +60,70 @@ export namespace LoggingUtils {
 		const displayName = jsMember ? memberNameMention(jsMember) : member.userId;
 		const joinedAt = new Date(Number(member.joinTime));
 
+		const queueMembers = [...store.dbMembers().filter(m => m.queueId === queue.id).values()];
+		const position = queueMembers.findIndex(m => m.userId === member.userId) + 1;
+		const positionStr = position > 0 ? ` at position \`${position}\`` : "";
+
 		const embed = new EmbedBuilder()
 			.setColor(queue.color)
 			.setTitle(`Joined ${queue.name}`)
-			.setDescription(`${userMention(member.userId)} (${displayName}) joined the **${queue.name}** queue.`)
+			.setDescription(`${userMention(member.userId)} (${displayName}) joined the **${queue.name}** queue${positionStr}.`)
 			.setFooter({ text: `User ID: ${member.userId}` })
 			.setTimestamp(joinedAt);
 
 		if (jsMember) {
-			embed.setThumbnail(jsMember.user.displayAvatarURL());
+			embed.setAuthor({
+				name: memberNameMention(jsMember),
+				iconURL: jsMember.user.displayAvatarURL(),
+			});
+		}
+
+		return await logChannel.send({ embeds: [embed] }).catch(() => null);
+	}
+
+	export async function logLeave(store: Store, queue: DbQueue, member: DbMember, position: number, reason: MemberRemovalReason) {
+		const { logChannelId, logScope } = store.dbGuild();
+		if (!(logChannelId && logScope)) return;
+		// leaves are non-admin actions
+		if (![Scope.NonAdmin, Scope.All].includes(logScope)) return;
+
+		const logChannel = await store.jsChannel(logChannelId) as GuildTextBasedChannel;
+		if (!logChannel) return;
+
+		const jsMember = await store.jsMember(member.userId);
+		const displayName = jsMember ? memberNameMention(jsMember) : member.userId;
+
+		let reasonStr: string;
+		if (reason === MemberRemovalReason.Expired) {
+			reasonStr = "`auto-removed`";
+		}
+		else if (reason === MemberRemovalReason.RemovedByPull) {
+			reasonStr = "`pulled from another queue`";
+		}
+		else if (reason === MemberRemovalReason.Kicked) {
+			const kickedBy = store.inter?.user?.id
+				? ` by ${userMention(store.inter.user.id)}`
+				: "";
+			reasonStr = `\`kicked from queue\`${kickedBy}`;
+		}
+		else {
+			reasonStr = "`leave button`";
+		}
+
+		const embed = new EmbedBuilder()
+			.setColor(queue.color)
+			.setTitle(`Left ${queue.name}`)
+			.setDescription(
+				`${userMention(member.userId)} (${displayName}) left the **${queue.name}** queue at position \`${position}\`. Reason: ${reasonStr}`
+			)
+			.setFooter({ text: `User ID: ${member.userId}` })
+			.setTimestamp();
+
+		if (jsMember) {
+			embed.setAuthor({
+				name: memberNameMention(jsMember),
+				iconURL: jsMember.user.displayAvatarURL(),
+			});
 		}
 
 		return await logChannel.send({ embeds: [embed] }).catch(() => null);
@@ -146,6 +195,7 @@ export namespace LoggingUtils {
 		queue: DbQueue,
 		pulledMembers: DbMember[],
 		sourceMessage: Message | null,
+		positionMap?: Map<string, number>,
 	) {
 		const { logChannelId, logScope } = store.dbGuild();
 		if (!(logChannelId && logScope)) return;
@@ -157,10 +207,11 @@ export namespace LoggingUtils {
 		const count = pulledMembers.length;
 
 		const memberLines = await Promise.all(
-			pulledMembers.map(async m => {
+			pulledMembers.map(async (m, i) => {
 				const jsMember = await store.jsMember(m.userId).catch(() => null);
 				const displayName = jsMember ? memberNameMention(jsMember) : m.userId;
-				return `${userMention(m.userId)} (${displayName}) — User ID: ${m.userId}`;
+				const pos = positionMap?.get(m.userId) ?? i + 1;
+				return `${userMention(m.userId)} (${displayName}) at position \`${pos}\``;
 			})
 		);
 
@@ -177,6 +228,10 @@ export namespace LoggingUtils {
 				iconURL: store.inter.user.displayAvatarURL(),
 				url: sourceMessage?.url ?? undefined,
 			});
+		}
+
+		if (sourceMessage?.url) {
+			embed.addFields({ name: "Pull location", value: sourceMessage.url, inline: false });
 		}
 
 		return await logChannel.send({ embeds: [embed] }).catch(() => null);

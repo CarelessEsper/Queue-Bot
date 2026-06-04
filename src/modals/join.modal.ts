@@ -41,6 +41,6 @@ export namespace JoinModal {
 			content: `Joined the ${queueMention(queue)} queue.`,
 			embeds: [await MemberUtils.getMemberDisplayLine(inter.store, queue, inter.member.id)],
 			ephemeral: true,
-		}, true);
+		});
 	}
 }

@@ -23,6 +23,6 @@ export class LeaveButton extends EveryoneButton {
 			by: { userId: inter.member.id },
 		});
 
-		await inter.respond(`Left the ${queueMention(queue)} queue.`, deletedMembers.length > 0);
+		await inter.respond(`Left the ${queueMention(queue)} queue.`);
 	}
 }
