@@ -48,7 +48,7 @@ export class PullCommand extends AdminCommand {
 				`You are about to pull ${countStr} from ${queuesMention(queues)}. Are you sure?`
 			);
 			if (!confirmed) {
-				await inter.respond("Pull cancelled.");
+				await inter.editReply({ content: "Pull cancelled.", components: [] }).catch(() => null);
 				return;
 			}
 		}
