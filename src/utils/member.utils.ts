@@ -5,6 +5,7 @@ import {
 	EmbedBuilder,
 	GuildMember,
 	type GuildTextBasedChannel,
+	type Message,
 	roleMention,
 	type Snowflake,
 	userMention,
@@ -153,48 +154,53 @@ export namespace MemberUtils {
 			}
 
 			if ([MemberRemovalReason.Pulled, MemberRemovalReason.Kicked].includes(reason)) {
-				const messageToSend = await describePulledMembers(store, queue, deleted, reason);
-				let link;
-				let sourceMessage: Message | null = null;
+				if (deleted.length === 0) {
+					if (reason === MemberRemovalReason.Pulled) {
+						await store.inter?.respond({ content: `The **${queue.name}** queue is currently empty.`, ephemeral: true });
+					}
+				}
+				else {
+					const messageToSend = await describePulledMembers(store, queue, deleted, reason);
+					let sourceMessage: Message | null = null;
 
-				if (messageChannelId && queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
-					const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
-					if (messageChannel) {
-						sourceMessage = await messageChannel.send(messageToSend).catch(() => null);
-						if (reason !== MemberRemovalReason.Pulled) {
-							LoggingUtils.log(store, true, sourceMessage).catch(() => null);
+					// Build mention content for pings (only for pulls with dmOnPullToggle)
+					const mentionContent = (reason === MemberRemovalReason.Pulled && queue.dmOnPullToggle)
+						? deleted.map(m => userMention(m.userId)).join(" ") + ` you were pulled from the **${queue.name}** queue.` + (queue.pullMessage ? `\n> ${queue.pullMessage}` : "")
+						: undefined;
+
+					if (messageChannelId && queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
+						const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
+						if (messageChannel) {
+							sourceMessage = await messageChannel.send({
+								content: mentionContent,
+								...messageToSend,
+							}).catch(() => null);
+							if (reason !== MemberRemovalReason.Pulled) {
+								LoggingUtils.log(store, true, sourceMessage).catch(() => null);
+							}
 						}
-						link = sourceMessage?.url;
+						await store.inter?.deleteReply().catch(() => null);
 					}
-					await store.inter?.deleteReply().catch(() => null);
-				}
-				else if (queue.pullMessageDisplayType === PullMessageDisplayType.Private) {
-					if (store.inter) {
-						sourceMessage = await store.inter.respond(messageToSend, true);
-						link = sourceMessage?.url;
+					else if (queue.pullMessageDisplayType === PullMessageDisplayType.Private) {
+						if (store.inter) {
+							sourceMessage = await store.inter.respond(messageToSend, true);
+							// Send mentions separately in the channel since private display can't carry content
+							if (mentionContent && messageChannelId) {
+								const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
+								await messageChannel?.send({ content: mentionContent }).catch(() => null);
+							}
+						}
+						else {
+							LoggingUtils.log(store, true, messageToSend).catch(() => null);
+						}
 					}
-					else {
-						LoggingUtils.log(store, true, messageToSend).catch(() => null);
-					}
-				}
 
-				if (reason === MemberRemovalReason.Pulled) {
-					// Fire logPull immediately — we'll edit it later if cross-queue removals happen
-					const logMsg = await LoggingUtils.logPull(store, queue, deleted, sourceMessage, positionMap);
-					if (logMsg) {
-						deleted.forEach(m => pullLogMessages.set(m.userId, logMsg));
+					if (reason === MemberRemovalReason.Pulled) {
+						const logMsg = await LoggingUtils.logPull(store, queue, deleted, sourceMessage, positionMap);
+						if (logMsg) {
+							deleted.forEach(m => pullLogMessages.set(m.userId, logMsg));
+						}
 					}
-				}
-
-				if (reason === MemberRemovalReason.Pulled && queue.dmOnPullToggle) {
-					// Notify pulled members in the source channel by tagging them
-					await NotificationUtils.notifyMembers({
-						store,
-						queue,
-						action: NotificationAction.PULLED_FROM_QUEUE,
-						members: deleted,
-						messageChannelId,
-					});
 				}
 			}
 
