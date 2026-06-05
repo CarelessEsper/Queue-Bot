@@ -25,11 +25,22 @@ export class LeaveQueueButton extends EveryoneButton {
 		return [LeaveQueueButton.ID, guildId, queueId.toString(), userId].join(LeaveQueueButton.SEPARATOR);
 	}
 
-	static parseCustomId(customId: string): { guildId: string; queueId: bigint; userId: string } | null {
+	/**
+	 * Format: "leave-queue:<guildId>:all:<userId>"
+	 */
+	static buildAllQueuesCustomId(guildId: string, userId: string): string {
+		return [LeaveQueueButton.ID, guildId, "all", userId].join(LeaveQueueButton.SEPARATOR);
+	}
+
+	static parseCustomId(customId: string): { guildId: string; queueId: bigint | null; userId: string } | null {
 		const parts = customId.split(LeaveQueueButton.SEPARATOR);
 		if (parts.length !== 4 || parts[0] !== LeaveQueueButton.ID) return null;
 		try {
-			return { guildId: parts[1], queueId: BigInt(parts[2]), userId: parts[3] };
+			return {
+				guildId: parts[1],
+				queueId: parts[2] === "all" ? null : BigInt(parts[2]),
+				userId: parts[3],
+			};
 		}
 		catch {
 			return null;
@@ -52,34 +63,55 @@ export class LeaveQueueButton extends EveryoneButton {
 		}
 
 		const store = new Store(guild);
-		const queue = store.dbQueues().get(queueId);
-		if (!queue) {
+
+		if (queueId === null) {
+			// Leave all auto-remove queues
+			const queuesLeft: string[] = [];
+			for (const queue of store.dbQueues().values()) {
+				if (!queue.autoRemovePeriod || queue.autoRemovePeriod <= 0n) continue;
+				const member = store.dbMembers().find(m => m.queueId === queue.id && m.userId === userId);
+				if (!member) continue;
+				AutoRemoveUtils.cancel(queue.id, userId);
+				await MemberUtils.deleteMembers({
+					store,
+					queues: [queue],
+					reason: MemberRemovalReason.Left,
+					by: { userId },
+					force: true,
+				}).catch(() => null);
+				queuesLeft.push(queueMention(queue));
+			}
+
 			await inter.update({
-				embeds: [new EmbedBuilder().setDescription("That queue no longer exists.")],
+				embeds: [new EmbedBuilder().setDescription(
+					queuesLeft.length
+						? `You have left: ${queuesLeft.join(", ")}.`
+						: "You were no longer in any queues."
+				)],
 				components: [],
 			});
-			return;
 		}
+		else {
+			const queue = store.dbQueues().get(queueId);
+			if (!queue) {
+				await inter.update({ embeds: [new EmbedBuilder().setDescription("That queue no longer exists.")], components: [] });
+				return;
+			}
 
-		// Cancel any pending auto-remove timer since they're leaving voluntarily
-		AutoRemoveUtils.cancel(queueId, userId);
+			AutoRemoveUtils.cancel(queueId, userId);
 
-		// Remove from queue
-		await MemberUtils.deleteMembers({
-			store,
-			queues: [queue],
-			reason: MemberRemovalReason.Left,
-			by: { userId },
-			force: true,
-		}).catch(() => null);
+			await MemberUtils.deleteMembers({
+				store,
+				queues: [queue],
+				reason: MemberRemovalReason.Left,
+				by: { userId },
+				force: true,
+			}).catch(() => null);
 
-		await inter.update({
-			embeds: [
-				new EmbedBuilder()
-					.setColor(queue.color as any)
-					.setDescription(`You have left the ${queueMention(queue)} queue.`),
-			],
-			components: [],
-		});
+			await inter.update({
+				embeds: [new EmbedBuilder().setColor(queue.color as any).setDescription(`You have left the ${queueMention(queue)} queue.`)],
+				components: [],
+			});
+		}
 	}
 }

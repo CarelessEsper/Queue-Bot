@@ -97,6 +97,9 @@ export namespace LoggingUtils {
 		if (reason === MemberRemovalReason.Expired) {
 			reasonStr = "`auto-removed`";
 		}
+		else if (reason === MemberRemovalReason.SilentExpired) {
+			reasonStr = "`auto-removed (bot offline)`";
+		}
 		else if (reason === MemberRemovalReason.RemovedByPull) {
 			reasonStr = "`pulled from another queue`";
 		}

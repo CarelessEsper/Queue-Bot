@@ -24,13 +24,26 @@ export class ExtendStayButton extends EveryoneButton {
 	}
 
 	/**
-	 * Parse a customId back into its components.
+	 * Build a customId for extending all queues for a user at once.
+	 * Format: "extend-stay:<guildId>:all:<userId>"
 	 */
-	static parseCustomId(customId: string): { guildId: string; queueId: bigint; userId: string } | null {
+	static buildAllQueuesCustomId(guildId: string, userId: string): string {
+		return [ExtendStayButton.ID, guildId, "all", userId].join(ExtendStayButton.SEPARATOR);
+	}
+
+	/**
+	 * Parse a customId back into its components.
+	 * Returns queueId as null when "all" queues mode.
+	 */
+	static parseCustomId(customId: string): { guildId: string; queueId: bigint | null; userId: string } | null {
 		const parts = customId.split(ExtendStayButton.SEPARATOR);
 		if (parts.length !== 4 || parts[0] !== ExtendStayButton.ID) return null;
 		try {
-			return { guildId: parts[1], queueId: BigInt(parts[2]), userId: parts[3] };
+			return {
+				guildId: parts[1],
+				queueId: parts[2] === "all" ? null : BigInt(parts[2]),
+				userId: parts[3],
+			};
 		}
 		catch {
 			return null;
@@ -55,30 +68,53 @@ export class ExtendStayButton extends EveryoneButton {
 		const { Store } = await import("../../db/store.ts");
 		const store = new Store(guild);
 
-		const queue = store.dbQueues().get(queueId);
-		if (!queue) {
-			await inter.reply({ content: "That queue no longer exists.", ephemeral: true });
-			return;
+		if (queueId === null) {
+			// Extend all queues with autoRemovePeriod that this user is in
+			const queuesExtended: string[] = [];
+			for (const queue of store.dbQueues().values()) {
+				if (!queue.autoRemovePeriod || queue.autoRemovePeriod <= 0n) continue;
+				const member = store.dbMembers().find(m => m.queueId === queue.id && m.userId === userId);
+				if (!member) continue;
+				AutoRemoveUtils.schedule(guildId, queue.id, userId, Number(queue.autoRemovePeriod) * 1000);
+				queuesExtended.push(queueMention(queue));
+			}
+
+			if (queuesExtended.length === 0) {
+				await inter.update({ embeds: [new EmbedBuilder().setDescription("You are no longer in any queues.")], components: [] });
+				return;
+			}
+
+			await inter.update({
+				embeds: [
+					new EmbedBuilder()
+						.setDescription(`✅ Your stay has been extended in: ${queuesExtended.join(", ")}.`),
+				],
+				components: [],
+			});
 		}
+		else {
+			const queue = store.dbQueues().get(queueId);
+			if (!queue) {
+				await inter.reply({ content: "That queue no longer exists.", ephemeral: true });
+				return;
+			}
 
-		// Confirm the member is still in the queue
-		const member = store.dbMembers().find(m => m.queueId === queueId && m.userId === userId);
-		if (!member) {
-			await inter.reply({ content: `You are no longer in the ${queueMention(queue)} queue.`, ephemeral: true });
-			return;
+			const member = store.dbMembers().find(m => m.queueId === queueId && m.userId === userId);
+			if (!member) {
+				await inter.reply({ content: `You are no longer in the ${queueMention(queue)} queue.`, ephemeral: true });
+				return;
+			}
+
+			AutoRemoveUtils.schedule(guildId, queueId, userId, Number(queue.autoRemovePeriod) * 1000);
+
+			await inter.update({
+				embeds: [
+					new EmbedBuilder()
+						.setColor(queue.color as any)
+						.setDescription(`✅ Your stay in the ${queueMention(queue)} queue has been extended by ${timeMention(queue.autoRemovePeriod)}.`),
+				],
+				components: [],
+			});
 		}
-
-		// Re-schedule for another full period
-		const periodMs = Number(queue.autoRemovePeriod) * 1000;
-		AutoRemoveUtils.schedule(guildId, queueId, userId, periodMs);
-
-		await inter.update({
-			embeds: [
-				new EmbedBuilder()
-					.setColor(queue.color as any)
-					.setDescription(`✅ Your stay in the ${queueMention(queue)} queue has been extended by ${timeMention(queue.autoRemovePeriod)}.`),
-			],
-			components: [],
-		});
 	}
 }

@@ -71,6 +71,7 @@ export enum MemberRemovalReason {
 	NotFound = "not found",
 	Expired = "expired",
 	RemovedByPull = "removed by pull",
+	SilentExpired = "silent expired",
 }
 
 export enum PullMessageDisplayType {

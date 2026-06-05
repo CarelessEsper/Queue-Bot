@@ -11,7 +11,6 @@ import { AdminCommand } from "../../types/command.types.ts";
 import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { SlashInteraction } from "../../types/interaction.types.ts";
 import { ChoiceType } from "../../types/parsing.types.ts";
-import { CustomError } from "../../utils/error.utils.ts";
 import { MemberUtils } from "../../utils/member.utils.ts";
 import { queueMention, queuesMention, usersMention } from "../../utils/string.utils.ts";
 import { ShowCommand } from "./show.command.ts";
@@ -58,7 +57,7 @@ export class MembersCommand extends AdminCommand {
 		.addSubcommand(subcommand => {
 			subcommand
 				.setName("restore")
-				.setDescription("Restore a recently-pulled member to the front of the queue");
+				.setDescription("Restore a recently-pulled member to their previous position in the queue");
 			Object.values(MembersCommand.RESTORE_OPTIONS).forEach(option => option.addToCommand(subcommand));
 			return subcommand;
 		});
@@ -162,44 +161,59 @@ export class MembersCommand extends AdminCommand {
 	// ====================================================================
 
 	static readonly RESTORE_OPTIONS = {
-		queue: new QueueOption({ required: true, description: "Queue to restore the member into" }),
-		user: new UserOption({ id: "user", required: true, description: "User to restore to the front of the queue" }),
+		user: new UserOption({ id: "user", required: true, description: "User to restore to their previous position" }),
+		queue1: new QueueOption({ id: "queue_1", required: true, description: "Queue to restore the member into" }),
+		queue2: new QueueOption({ id: "queue_2", description: "Queue to restore the member into" }),
+		queue3: new QueueOption({ id: "queue_3", description: "Queue to restore the member into" }),
+		queue4: new QueueOption({ id: "queue_4", description: "Queue to restore the member into" }),
+		queue5: new QueueOption({ id: "queue_5", description: "Queue to restore the member into" }),
 	};
 
 	static async members_restore(inter: SlashInteraction) {
-		const queue = await MembersCommand.RESTORE_OPTIONS.queue.get(inter);
 		const user = MembersCommand.RESTORE_OPTIONS.user.get(inter);
-
-		// Find the archived entry — must have been pulled
-		const archived = inter.store.dbArchivedMembers().find(
-			m => m.queueId === queue.id && m.userId === user.id && m.reason === MemberRemovalReason.Pulled
-		);
-
-		if (!archived) {
-			throw new CustomError({
-				message: "No recent pull found",
-				embeds: [
-					new EmbedBuilder().setDescription(
-						`${userMention(user.id)} has no recent pull record in the ${queueMention(queue)} queue. ` +
-						`Only members who were pulled can be restored.`
-					),
-				],
-			});
-		}
+		const queues = compact([
+			await MembersCommand.RESTORE_OPTIONS.queue1.get(inter),
+			await MembersCommand.RESTORE_OPTIONS.queue2.get(inter),
+			await MembersCommand.RESTORE_OPTIONS.queue3.get(inter),
+			await MembersCommand.RESTORE_OPTIONS.queue4.get(inter),
+			await MembersCommand.RESTORE_OPTIONS.queue5.get(inter),
+		]);
 
 		const jsMember = await inter.store.jsMember(user.id);
 		if (!jsMember) return;
 
-		// Insert with priorityOrder = 0n so they sort ahead of all other members
-		await MemberUtils.restoreMember({
-			store: inter.store,
-			queue,
-			jsMember,
-			message: archived.message,
-		});
+		const restored: string[] = [];
+		const notFound: string[] = [];
+
+		for (const queue of queues) {
+			const archived = inter.store.dbArchivedMembers().find(
+				m => m.queueId === queue.id && m.userId === user.id &&
+					(m.reason === MemberRemovalReason.Pulled || m.reason === MemberRemovalReason.RemovedByPull)
+			);
+
+			if (!archived) {
+				notFound.push(queueMention(queue));
+				continue;
+			}
+
+			await MemberUtils.restoreMember({
+				store: inter.store,
+				queue,
+				jsMember,
+				message: archived.message,
+				positionTime: archived.positionTime,
+				priorityOrder: archived.priorityOrder,
+			});
+
+			restored.push(queueMention(queue));
+		}
+
+		const lines: string[] = [];
+		if (restored.length) lines.push(`Restored ${userMention(user.id)} to their previous position in: ${restored.join(", ")}.`);
+		if (notFound.length) lines.push(`No pull record found for ${userMention(user.id)} in: ${notFound.join(", ")}.`);
 
 		await inter.respond(
-			{ embeds: [new EmbedBuilder().setColor(queue.color).setDescription(`Restored ${userMention(user.id)} to the front of the ${queueMention(queue)} queue.`)] },
+			{ embeds: [new EmbedBuilder().setDescription(lines.join("\n"))] },
 			true
 		);
 	}

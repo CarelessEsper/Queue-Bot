@@ -126,7 +126,7 @@ export namespace MemberUtils {
 
 		async function deleteMembersAndNotify(queue: DbQueue, userIds: Snowflake[], reason: MemberRemovalReason) {
 			// Capture positions before deletion so leave/pull logs can reference them
-			const shouldLogLeave = reason === MemberRemovalReason.Left || reason === MemberRemovalReason.Expired || reason === MemberRemovalReason.Kicked;
+			const shouldLogLeave = reason === MemberRemovalReason.Left || reason === MemberRemovalReason.Expired || reason === MemberRemovalReason.SilentExpired || reason === MemberRemovalReason.Kicked;
 			const queueMembersBefore = (shouldLogLeave || reason === MemberRemovalReason.Pulled)
 				? [...store.dbMembers().filter(m => m.queueId === queue.id).values()]
 				: [];
@@ -367,8 +367,10 @@ export namespace MemberUtils {
 		queue: DbQueue,
 		jsMember: GuildMember,
 		message?: string,
+		positionTime?: bigint,
+		priorityOrder?: bigint,
 	}) {
-		const { store, queue, jsMember, message } = options;
+		const { store, queue, jsMember, message, positionTime, priorityOrder } = options;
 
 		return await db.transaction(async () => {
 			const insertedMember = store.insertMember({
@@ -376,15 +378,32 @@ export namespace MemberUtils {
 				queueId: queue.id,
 				userId: jsMember.id,
 				message,
-				priorityOrder: 0n,
-				positionTime: BigInt(Date.now()),
+				priorityOrder: priorityOrder ?? null,
+				positionTime: positionTime ?? BigInt(Date.now()),
 			});
 
 			await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");
 
-			// Schedule auto-remove if configured
+			// Schedule auto-remove if configured, synced to earliest expiry across all queues
 			if (queue.autoRemovePeriod && queue.autoRemovePeriod > 0n) {
-				AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, Number(queue.autoRemovePeriod) * 1000);
+				const now = BigInt(Date.now());
+				const thisPeriodMs = Number(queue.autoRemovePeriod) * 1000;
+
+				const otherQueues = store.dbQueues().filter(q =>
+					q.id !== queue.id && q.autoRemovePeriod && q.autoRemovePeriod > 0n
+				);
+				let earliestRemainingMs = thisPeriodMs;
+				for (const otherQueue of otherQueues.values()) {
+					const otherMember = store.dbMembers().find(m => m.queueId === otherQueue.id && m.userId === jsMember.id);
+					if (!otherMember) continue;
+					const elapsed = Number(now - otherMember.joinTime);
+					const remaining = Number(otherQueue.autoRemovePeriod) * 1000 - elapsed;
+					if (remaining > 0 && remaining < earliestRemainingMs) {
+						earliestRemainingMs = remaining;
+					}
+				}
+
+				AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, earliestRemainingMs);
 			}
 
 			DisplayUtils.requestDisplayUpdate({ store, queueId: queue.id });
@@ -524,9 +543,29 @@ export namespace MemberUtils {
 		// Log the join event
 		LoggingUtils.logJoin(store, queue, insertedMember).catch(() => null);
 
-		// Schedule auto-remove if configured
+		// Schedule auto-remove if configured.
+		// If the member is already in other auto-remove queues, sync to the earliest
+		// expiry so all their queues expire together and the DM is always bundled.
 		if (queue.autoRemovePeriod && queue.autoRemovePeriod > 0n) {
-			AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, Number(queue.autoRemovePeriod) * 1000);
+			const now = BigInt(Date.now());
+			const thisPeriodMs = Number(queue.autoRemovePeriod) * 1000;
+
+			// Find the earliest remaining time across all other auto-remove queues this user is in
+			const otherQueues = store.dbQueues().filter(q =>
+				q.id !== queue.id && q.autoRemovePeriod && q.autoRemovePeriod > 0n
+			);
+			let earliestRemainingMs = thisPeriodMs;
+			for (const otherQueue of otherQueues.values()) {
+				const otherMember = store.dbMembers().find(m => m.queueId === otherQueue.id && m.userId === jsMember.id);
+				if (!otherMember) continue;
+				const elapsed = Number(now - otherMember.joinTime);
+				const remaining = Number(otherQueue.autoRemovePeriod) * 1000 - elapsed;
+				if (remaining > 0 && remaining < earliestRemainingMs) {
+					earliestRemainingMs = remaining;
+				}
+			}
+
+			AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, earliestRemainingMs);
 		}
 
 		return insertedMember;
@@ -535,6 +574,13 @@ export namespace MemberUtils {
 	function verifyMemberEligibility(store: Store, queue: DbQueue, jsMember: GuildMember, archivedMember: DbArchivedMember) {
 		if (queue.lockToggle) {
 			throw new QueueLockedError();
+		}
+		// Check if already in the queue
+		const alreadyInQueue = store.dbMembers().some(m => m.queueId === queue.id && m.userId === jsMember.id);
+		if (alreadyInQueue) {
+			throw new CustomError({
+				message: `You are already in the ${queueMention(queue)} queue.`,
+			});
 		}
 		if (queue.size) {
 			const members = store.dbMembers().filter(member => member.queueId === queue.id);
