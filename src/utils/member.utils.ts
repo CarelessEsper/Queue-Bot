@@ -169,26 +169,17 @@ export namespace MemberUtils {
 						: undefined;
 
 					if (messageChannelId && queue.pullMessageDisplayType === PullMessageDisplayType.Public) {
-						if (store.inter) {
-							// Reply to the /pull command directly so the message appears as a reply
-							sourceMessage = await store.inter.respond({
+						const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
+						if (messageChannel) {
+							sourceMessage = await messageChannel.send({
 								content: mentionContent,
 								...messageToSend,
-							}, true);
-						}
-						else {
-							// No interaction context (e.g. scheduled pull) — send to channel
-							const messageChannel = await store.jsChannel(messageChannelId) as GuildTextBasedChannel;
-							if (messageChannel) {
-								sourceMessage = await messageChannel.send({
-									content: mentionContent,
-									...messageToSend,
-								}).catch(() => null);
-								if (reason !== MemberRemovalReason.Pulled) {
-									LoggingUtils.log(store, true, sourceMessage).catch(() => null);
-								}
+							}).catch(() => null);
+							if (reason !== MemberRemovalReason.Pulled) {
+								LoggingUtils.log(store, true, sourceMessage).catch(() => null);
 							}
 						}
+						await store.inter?.deleteReply().catch(() => null);
 					}
 					else if (queue.pullMessageDisplayType === PullMessageDisplayType.Private) {
 						if (store.inter) {
