@@ -28,6 +28,12 @@ export class AutocompleteHandler implements Handler {
 			option = new PullQueuesOption();
 		}
 
+		if (!option) {
+			console.warn(`[AutocompleteHandler] No option found for focused name: "${focusedOption.name}" (command: ${(this.inter as any).commandName})`);
+			await this.inter.respond([]);
+			return;
+		}
+
 		const suggestions = await option.getAutocompletions({ inter: this.inter, lowerSearchText }) as UIOption[];
 		suggestions.sort((a, b) => a.name.localeCompare(b.name));
 

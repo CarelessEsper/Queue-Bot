@@ -14,12 +14,20 @@ export class QueuesOption extends CustomOption {
 
 	getAutocompletions = QueueOption.getAutocompletions;
 
+	constructor(config?: ConstructorParameters<typeof CustomOption>[0]) {
+		super(config);
+		// Allow config to override the default SOME/ALL extra choices
+		if (config?.extraChoices !== undefined) {
+			this.extraChoices = config.extraChoices as any;
+		}
+	}
+
 	get(inter: AutocompleteInteraction | SlashInteraction) {
 		return super.get(inter) as Promise<Collection<bigint, DbQueue>>;
 	}
 
 	protected async getUncached(inter: AutocompleteInteraction | SlashInteraction) {
-		const inputString = inter.options.getString(QueuesOption.ID);
+		const inputString = inter.options.getString(this.identifier);
 		if (!inputString) return;
 
 		const scopedQueues = inter.store.dbQueues();
@@ -30,8 +38,13 @@ export class QueuesOption extends CustomOption {
 			case CHOICE_SOME.value:
 				return await this.getViaSelectMenu(inter as SlashInteraction, scopedQueues);
 			default:
-				const queue = QueueOption.findQueue(scopedQueues, inputString);
-				return queue ? new Collection([[queue.id, queue]]) : null;
+				try {
+					const queue = QueueOption.findQueue(scopedQueues, inputString);
+					return new Collection([[queue.id, queue]]);
+				}
+				catch {
+					return null;
+				}
 		}
 	}
 

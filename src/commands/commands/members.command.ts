@@ -5,7 +5,6 @@ import type { DbQueue } from "../../db/schema.ts";
 import { UserOption } from "../../options/base-option.ts";
 import { MembersOption } from "../../options/options/members.option.ts";
 import { MessageOption } from "../../options/options/message.option.ts";
-import { QueueOption } from "../../options/options/queue.option.ts";
 import { QueuesOption } from "../../options/options/queues.option.ts";
 import { AdminCommand } from "../../types/command.types.ts";
 import { MemberRemovalReason } from "../../types/db.types.ts";
@@ -29,15 +28,16 @@ export class MembersCommand extends AdminCommand {
 		.addSubcommand(subcommand => {
 			subcommand
 				.setName("get")
-				.setDescription("Alias for /show");
-			Object.values(MembersCommand.GET_OPTIONS).forEach(option => option.addToCommand(subcommand));
+				.setDescription("Alias for /show")
+				.addStringOption(MembersCommand.GET_OPTIONS.queues.build);
 			return subcommand;
 		})
 		.addSubcommand(subcommand => {
 			subcommand
 				.setName("add")
-				.setDescription("Add users or roles to a queue");
-			Object.values(MembersCommand.ADD_OPTIONS).forEach(option => option.addToCommand(subcommand));
+				.setDescription("Add users or roles to a queue")
+				.addStringOption(MembersCommand.ADD_OPTIONS.queues.build);
+			Object.values(MembersCommand.ADD_OPTIONS).filter(o => o !== MembersCommand.ADD_OPTIONS.queues).forEach(option => option.addToCommand(subcommand));
 			return subcommand;
 		})
 		.addSubcommand(subcommand => {
@@ -57,8 +57,9 @@ export class MembersCommand extends AdminCommand {
 		.addSubcommand(subcommand => {
 			subcommand
 				.setName("restore")
-				.setDescription("Restore a recently-pulled member to their previous position in the queue");
-			Object.values(MembersCommand.RESTORE_OPTIONS).forEach(option => option.addToCommand(subcommand));
+				.setDescription("Restore a recently-pulled member to their previous position in the queue")
+				.addStringOption(MembersCommand.RESTORE_OPTIONS.queues.build);
+			Object.values(MembersCommand.RESTORE_OPTIONS).filter(o => o !== MembersCommand.RESTORE_OPTIONS.queues).forEach(option => option.addToCommand(subcommand));
 			return subcommand;
 		});
 
@@ -79,7 +80,7 @@ export class MembersCommand extends AdminCommand {
 	// ====================================================================
 
 	static readonly ADD_OPTIONS = {
-		queues: new QueuesOption({ required: true, description: "Queue(s) to add members to" }),
+		queues: new QueuesOption({ required: true, description: "Queue(s) to add members to", extraChoices: [] }),
 		user1: new UserOption({ id: "user_1", required: true, description: "User to add" }),
 		user2: new UserOption({ id: "user_2", description: "User to add" }),
 		user3: new UserOption({ id: "user_3", description: "User to add" }),
@@ -161,23 +162,13 @@ export class MembersCommand extends AdminCommand {
 	// ====================================================================
 
 	static readonly RESTORE_OPTIONS = {
+		queues: new QueuesOption({ required: true, description: "Queue(s) to restore the member into", extraChoices: [] }),
 		user: new UserOption({ id: "user", required: true, description: "User to restore to their previous position" }),
-		queue1: new QueueOption({ id: "queue_1", required: true, description: "Queue to restore the member into" }),
-		queue2: new QueueOption({ id: "queue_2", description: "Queue to restore the member into" }),
-		queue3: new QueueOption({ id: "queue_3", description: "Queue to restore the member into" }),
-		queue4: new QueueOption({ id: "queue_4", description: "Queue to restore the member into" }),
-		queue5: new QueueOption({ id: "queue_5", description: "Queue to restore the member into" }),
 	};
 
 	static async members_restore(inter: SlashInteraction) {
+		const queues = await MembersCommand.RESTORE_OPTIONS.queues.get(inter);
 		const user = MembersCommand.RESTORE_OPTIONS.user.get(inter);
-		const queues = compact([
-			await MembersCommand.RESTORE_OPTIONS.queue1.get(inter),
-			await MembersCommand.RESTORE_OPTIONS.queue2.get(inter),
-			await MembersCommand.RESTORE_OPTIONS.queue3.get(inter),
-			await MembersCommand.RESTORE_OPTIONS.queue4.get(inter),
-			await MembersCommand.RESTORE_OPTIONS.queue5.get(inter),
-		]);
 
 		const jsMember = await inter.store.jsMember(user.id);
 		if (!jsMember) return;
@@ -185,7 +176,7 @@ export class MembersCommand extends AdminCommand {
 		const restored: string[] = [];
 		const notFound: string[] = [];
 
-		for (const queue of queues) {
+		for (const queue of queues.values()) {
 			const archived = inter.store.dbArchivedMembers().find(
 				m => m.queueId === queue.id && m.userId === user.id &&
 					(m.reason === MemberRemovalReason.Pulled || m.reason === MemberRemovalReason.RemovedByPull)
@@ -202,7 +193,7 @@ export class MembersCommand extends AdminCommand {
 				jsMember,
 				message: archived.message,
 				positionTime: archived.positionTime,
-				priorityOrder: archived.priorityOrder,
+				priorityOrder: null,
 			});
 
 			restored.push(queueMention(queue));

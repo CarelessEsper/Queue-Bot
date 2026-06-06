@@ -18,7 +18,7 @@ export class QueueOption extends CustomOption {
 	}
 
 	protected async getUncached(inter: AutocompleteInteraction | SlashInteraction) {
-		const inputString = inter.options.getString(QueueOption.ID);
+		const inputString = inter.options.getString(this.identifier);
 		if (!inputString) return;
 
 		const scopedQueues = inter.store.dbQueues();
