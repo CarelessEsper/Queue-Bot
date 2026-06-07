@@ -75,6 +75,8 @@ export class ExtendStayButton extends EveryoneButton {
 				if (!queue.autoRemovePeriod || queue.autoRemovePeriod <= 0n) continue;
 				const member = store.dbMembers().find(m => m.queueId === queue.id && m.userId === userId);
 				if (!member) continue;
+				// Reset autoRemoveTime so loadAll calculates the correct remaining time after a restart
+				store.updateMember({ ...member, autoRemoveTime: BigInt(Date.now()) });
 				AutoRemoveUtils.schedule(guildId, queue.id, userId, Number(queue.autoRemovePeriod) * 1000);
 				queuesExtended.push(queueMention(queue));
 			}
@@ -105,6 +107,8 @@ export class ExtendStayButton extends EveryoneButton {
 				return;
 			}
 
+			// Reset autoRemoveTime so loadAll calculates the correct remaining time after a restart
+			store.updateMember({ ...member, autoRemoveTime: BigInt(Date.now()) });
 			AutoRemoveUtils.schedule(guildId, queueId, userId, Number(queue.autoRemovePeriod) * 1000);
 
 			await inter.update({

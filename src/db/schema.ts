@@ -126,6 +126,7 @@ export const MEMBER_TABLE = sqliteTable("member", ({
 	message: text("message"),
 	positionTime: integer("position_time").$type<bigint>().notNull().$defaultFn(() => BigInt(Date.now())),
 	joinTime: integer("join_time").$type<bigint>().notNull().$defaultFn(() => BigInt(Date.now())),
+	autoRemoveTime: integer("auto_remove_time").$type<bigint>().$defaultFn(() => BigInt(Date.now())),
 	priorityOrder: integer("priority_order").$type<bigint>(),
 }),
 (table) => ({

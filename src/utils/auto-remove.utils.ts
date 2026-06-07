@@ -107,7 +107,8 @@ export namespace AutoRemoveUtils {
 			const members = Queries.selectManyMembers({ guildId: queue.guildId, queueId: queue.id });
 			for (const member of members) {
 				const periodMs = Number(queue.autoRemovePeriod) * 1000;
-				const elapsed = Number(now - member.joinTime);
+				const autoRemoveTime = member.autoRemoveTime ?? member.joinTime;
+				const elapsed = Number(now - autoRemoveTime);
 				const remaining = periodMs - elapsed;
 
 				if (remaining <= 0) {

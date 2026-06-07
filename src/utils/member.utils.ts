@@ -278,12 +278,13 @@ export namespace MemberUtils {
 			// Edit each unique pull log message to append the secondary removal field
 			if (secondaryLines.length > 0) {
 				const uniqueLogMessages = new Set(pullLogMessages.values());
+				const fieldValue = secondaryLines.join("\n").substring(0, 1024);
 				for (const logMsg of uniqueLogMessages) {
 					const existingEmbed = logMsg.embeds[0];
 					if (!existingEmbed) continue;
 					const updatedEmbed = EmbedBuilder.from(existingEmbed).addFields({
 						name: "Automatically removed from queues",
-						value: secondaryLines.join("\n"),
+						value: fieldValue,
 					});
 					logMsg.edit({ embeds: [updatedEmbed] }).catch(() => null);
 				}
@@ -396,13 +397,16 @@ export namespace MemberUtils {
 				for (const otherQueue of otherQueues.values()) {
 					const otherMember = store.dbMembers().find(m => m.queueId === otherQueue.id && m.userId === jsMember.id);
 					if (!otherMember) continue;
-					const elapsed = Number(now - otherMember.joinTime);
+					const autoRemoveTime = otherMember.autoRemoveTime ?? otherMember.joinTime;
+					const elapsed = Number(now - autoRemoveTime);
 					const remaining = Number(otherQueue.autoRemovePeriod) * 1000 - elapsed;
 					if (remaining > 0 && remaining < earliestRemainingMs) {
 						earliestRemainingMs = remaining;
 					}
 				}
 
+				// Persist autoRemoveTime so loadAll calculates correctly after a restart
+				store.updateMember({ ...insertedMember, autoRemoveTime: BigInt(Date.now()) });
 				AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, earliestRemainingMs);
 			}
 
@@ -516,11 +520,13 @@ export namespace MemberUtils {
 
 		const priorityOrder = PriorityUtils.getMemberPriority(store, queue.id, jsMember);
 		let positionTime = BigInt(Date.now());
+		let joinTime = BigInt(Date.now());
 
 		if (queue.rejoinGracePeriod && archivedMember?.reason === MemberRemovalReason.Left) {
 			if (BigInt(Date.now()) - archivedMember.archivedTime <= (queue.rejoinGracePeriod * 1000n)) {
-				// Reuse the positionTime
+				// Reuse both positionTime (for queue ordering) and joinTime (for display)
 				positionTime = archivedMember.positionTime;
+				joinTime = archivedMember.joinTime;
 			}
 		}
 
@@ -531,6 +537,7 @@ export namespace MemberUtils {
 			message,
 			priorityOrder,
 			positionTime,
+			joinTime,
 		});
 
 		await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");
@@ -558,13 +565,16 @@ export namespace MemberUtils {
 			for (const otherQueue of otherQueues.values()) {
 				const otherMember = store.dbMembers().find(m => m.queueId === otherQueue.id && m.userId === jsMember.id);
 				if (!otherMember) continue;
-				const elapsed = Number(now - otherMember.joinTime);
+				const autoRemoveTime = otherMember.autoRemoveTime ?? otherMember.joinTime;
+				const elapsed = Number(now - autoRemoveTime);
 				const remaining = Number(otherQueue.autoRemovePeriod) * 1000 - elapsed;
 				if (remaining > 0 && remaining < earliestRemainingMs) {
 					earliestRemainingMs = remaining;
 				}
 			}
 
+			// Persist autoRemoveTime so loadAll calculates correctly after a restart
+			store.updateMember({ ...insertedMember, autoRemoveTime: BigInt(Date.now()) });
 			AutoRemoveUtils.schedule(store.guild.id, queue.id, jsMember.id, earliestRemainingMs);
 		}
 
