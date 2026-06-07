@@ -6,6 +6,7 @@ import { PullQueuesOption } from "../../options/options/pull-queues.option.ts";
 import { AdminCommand } from "../../types/command.types.ts";
 import { MemberRemovalReason } from "../../types/db.types.ts";
 import type { SlashInteraction } from "../../types/interaction.types.ts";
+import { CHOICE_SOME } from "../../types/parsing.types.ts";
 import { MemberUtils } from "../../utils/member.utils.ts";
 import { QueueTagUtils } from "../../utils/queue-tag.utils.ts";
 import { queuesMention } from "../../utils/string.utils.ts";
@@ -18,7 +19,7 @@ export class PullCommand extends AdminCommand {
 	static readonly PULL_OPTIONS = {
 		queues: new PullQueuesOption({ required: true, description: "Queue(s) to pull members from" }),
 		count: new NumberOption({ description: "Number of queue members to pull", defaultValue: 1, minValue: 1 }),
-		members: new MembersOption({ description: "Pull specific members instead of the next member" }),
+		members: new MembersOption({ description: "Pull specific members instead of the next member", extraChoices: [CHOICE_SOME] }),
 	};
 
 	data = new SlashCommandBuilder()

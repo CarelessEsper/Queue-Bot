@@ -14,6 +14,13 @@ export class MembersOption extends CustomOption {
 
 	getAutocompletions = MemberOption.getAutocompletions;
 
+	constructor(config?: ConstructorParameters<typeof CustomOption>[0]) {
+		super(config);
+		if (config?.extraChoices !== undefined) {
+			this.extraChoices = config.extraChoices as any;
+		}
+	}
+
 	// force return type to be Collection<bigint, DbMember>
 	get(inter: AutocompleteInteraction | SlashInteraction) {
 		return super.get(inter) as Promise<Collection<bigint, DbMember>>;
