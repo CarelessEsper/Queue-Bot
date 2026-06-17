@@ -202,7 +202,6 @@ export namespace MemberUtils {
 
 					if (reason === MemberRemovalReason.Pulled) {
 						// Stage for post-transaction pull event creation
-						console.log(`[PullEvent] Staging ${deleted.length} member(s) from queue ${queue.name}`);
 						pullStage.push({ queue, deleted, sourceMessage, positionMap });
 					}
 				}
@@ -248,9 +247,7 @@ export namespace MemberUtils {
 		});
 
 		// After the transaction: create pull events and send log messages with the IDs
-		console.log(`[PullEvent] reason=${reason}, pullStage.length=${pullStage.length}, deletedMembers.length=${deletedMembers.length}`);
 		if (reason === MemberRemovalReason.Pulled && pullStage.length > 0) {
-			console.log(`[PullEvent] Processing ${pullStage.length} staged pull(s)`);
 			for (const { queue, deleted, sourceMessage, positionMap } of pullStage) {
 				const pullEvent = store.insertPullEvent(store.guild.id, deleted.map(m => ({
 					userId: m.userId,
