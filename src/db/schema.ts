@@ -259,3 +259,19 @@ export const PATCH_NOTE_TABLE = sqliteTable("patch_note", ({
 
 export type NewPatchNote = typeof PATCH_NOTE_TABLE.$inferInsert;
 export type DbPatchNote = typeof PATCH_NOTE_TABLE.$inferSelect;
+
+
+export const PULL_EVENT_TABLE = sqliteTable("pull_event", ({
+	id: integer("id").$type<bigint>().primaryKey({ autoIncrement: true }),
+
+	guildId: text("guild_id").$type<Snowflake>().notNull().references(() => GUILD_TABLE.guildId, { onDelete: "cascade" }),
+	pulledAt: integer("pulled_at").$type<bigint>().notNull().$defaultFn(() => BigInt(Date.now())),
+	// JSON-encoded array of { userId, queueId, positionTime, joinTime, message, reason }
+	members: text("members").notNull(),
+}),
+(table) => ({
+	guildIdIndex: index("pull_event_guild_id_index").on(table.guildId),
+}));
+
+export type NewPullEvent = typeof PULL_EVENT_TABLE.$inferInsert;
+export type DbPullEvent = typeof PULL_EVENT_TABLE.$inferSelect;

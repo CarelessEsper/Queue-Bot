@@ -199,6 +199,7 @@ export namespace LoggingUtils {
 		pulledMembers: DbMember[],
 		sourceMessage: Message | null,
 		positionMap?: Map<string, number>,
+		pullEventId?: bigint,
 	) {
 		const { logChannelId, logScope } = store.dbGuild();
 		if (!(logChannelId && logScope)) return;
@@ -218,11 +219,15 @@ export namespace LoggingUtils {
 			})
 		);
 
+		const footerText = pullEventId
+			? `${count} user${count === 1 ? "" : "s"} pulled · Pull ID: ${pullEventId}`
+			: `${count} user${count === 1 ? "" : "s"} pulled from the waitlist`;
+
 		const embed = new EmbedBuilder()
 			.setColor(queue.color)
 			.setTitle(`Pulled from ${queue.name}`)
 			.setDescription(memberLines.join("\n"))
-			.setFooter({ text: `${count} user${count === 1 ? "" : "s"} pulled from the waitlist` })
+			.setFooter({ text: footerText })
 			.setTimestamp();
 
 		if (store.inter?.user) {

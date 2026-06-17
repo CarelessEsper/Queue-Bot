@@ -45,6 +45,7 @@ import {
 	type NewVoice,
 	type NewWhitelisted,
 	PRIORITIZED_TABLE,
+	PULL_EVENT_TABLE,
 	QUEUE_TABLE,
 	SCHEDULE_TABLE,
 	VOICE_TABLE,
@@ -326,8 +327,7 @@ export class Store {
 	}
 
 	// replace on conflict
-	insertArchivedMember(newArchivedMember: NewArchivedMember) {
-		this.incrementGuildStat("archivedMembersAdded");
+	insertArchivedMember(newArchivedMember: NewArchivedMember) {		this.incrementGuildStat("archivedMembersAdded");
 		return db
 			.insert(ARCHIVED_MEMBER_TABLE)
 			.values(newArchivedMember)
@@ -336,6 +336,39 @@ export class Store {
 				set: { ...newArchivedMember, archivedTime: BigInt(Date.now()) },
 			})
 			.returning().get();
+	}
+
+	insertPullEvent(guildId: Snowflake, members: { userId: Snowflake, queueId: string, positionTime: string, joinTime: string, message: string | null, reason: string }[]) {
+		try {
+			return db
+				.insert(PULL_EVENT_TABLE)
+				.values({ guildId, pulledAt: BigInt(Date.now()), members: JSON.stringify(members) })
+				.returning().get();
+		}
+		catch (e) {
+			console.error("[Store] insertPullEvent failed:", e);
+			return null;
+		}
+	}
+
+	deletePullEvent(id: bigint) {
+		return db.delete(PULL_EVENT_TABLE).where(eq(PULL_EVENT_TABLE.id, id)).returning().get();
+	}
+
+	appendToPullEvent(id: bigint, additionalMembers: { userId: string, queueId: string, positionTime: string, joinTime: string, message: string | null, reason: string }[]) {
+		try {
+			const existing = db.select().from(PULL_EVENT_TABLE).where(eq(PULL_EVENT_TABLE.id, id)).get();
+			if (!existing) return;
+			const currentMembers = JSON.parse(existing.members);
+			const updated = [...currentMembers, ...additionalMembers];
+			return db.update(PULL_EVENT_TABLE)
+				.set({ members: JSON.stringify(updated) })
+				.where(eq(PULL_EVENT_TABLE.id, id))
+				.returning().get();
+		}
+		catch (e) {
+			console.error("[Store] appendToPullEvent failed:", e);
+		}
 	}
 
 	// ====================================================================

@@ -15,6 +15,7 @@ import type { PendingGuildUpdates } from "../types/misc.types.ts";
 import { ClientUtils } from "../utils/client.utils.ts";
 import { formatFileDate } from "../utils/misc.utils.ts";
 import { db, DB_BACKUP_DIRECTORY, DB_FILEPATH } from "./db.ts";
+import { Queries } from "./queries.ts";
 import {
 	ADMIN_TABLE,
 	ARCHIVED_MEMBER_TABLE,
@@ -99,6 +100,7 @@ cron("0 */2 * * *", async () => {
 		backupPrep();
 		deleteOldBackups();
 		deleteOldArchivedMembers();
+		Queries.deleteOldPullEvents();
 		await deleteDeadGuilds();
 		logStats();
 		backup();

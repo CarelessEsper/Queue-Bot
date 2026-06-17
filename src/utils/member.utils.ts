@@ -123,6 +123,11 @@ export namespace MemberUtils {
 
 		// Track log messages from pulls so we can edit them after cross-queue removals
 		const pullLogMessages = new Map<string, Message>(); // userId -> log message
+		const pullEventIds = new Map<string, bigint>(); // userId -> pull event id
+
+		// Staging for pull event creation — populated inside the transaction, processed after
+		type PullStage = { queue: DbQueue, deleted: DbMember[], sourceMessage: Message | null, positionMap: Map<string, number> };
+		const pullStage: PullStage[] = [];
 
 		async function deleteMembersAndNotify(queue: DbQueue, userIds: Snowflake[], reason: MemberRemovalReason) {
 			// Capture positions before deletion so leave/pull logs can reference them
@@ -196,10 +201,9 @@ export namespace MemberUtils {
 					}
 
 					if (reason === MemberRemovalReason.Pulled) {
-						const logMsg = await LoggingUtils.logPull(store, queue, deleted, sourceMessage, positionMap);
-						if (logMsg) {
-							deleted.forEach(m => pullLogMessages.set(m.userId, logMsg));
-						}
+						// Stage for post-transaction pull event creation
+						console.log(`[PullEvent] Staging ${deleted.length} member(s) from queue ${queue.name}`);
+						pullStage.push({ queue, deleted, sourceMessage, positionMap });
 					}
 				}
 			}
@@ -243,6 +247,41 @@ export namespace MemberUtils {
 			}
 		});
 
+		// After the transaction: create pull events and send log messages with the IDs
+		console.log(`[PullEvent] reason=${reason}, pullStage.length=${pullStage.length}, deletedMembers.length=${deletedMembers.length}`);
+		if (reason === MemberRemovalReason.Pulled && pullStage.length > 0) {
+			console.log(`[PullEvent] Processing ${pullStage.length} staged pull(s)`);
+			for (const { queue, deleted, sourceMessage, positionMap } of pullStage) {
+				const pullEvent = store.insertPullEvent(store.guild.id, deleted.map(m => ({
+					userId: m.userId,
+					queueId: m.queueId.toString(),
+					positionTime: m.positionTime.toString(),
+					joinTime: m.joinTime.toString(),
+					message: m.message,
+					reason: MemberRemovalReason.Pulled,
+				})));
+				const pullEventId = pullEvent?.id;
+				if (pullEventId) {
+					deleted.forEach(m => pullEventIds.set(m.userId, pullEventId));
+				}
+
+				// Edit the already-sent channel message to add the pull ID to its footer
+				if (pullEventId && sourceMessage) {
+					const existingEmbed = sourceMessage.embeds[0];
+					if (existingEmbed) {
+						const updatedEmbed = EmbedBuilder.from(existingEmbed)
+							.setFooter({ text: `Pull ID: ${pullEventId}` });
+						sourceMessage.edit({ embeds: [updatedEmbed] }).catch(() => null);
+					}
+				}
+
+				const logMsg = await LoggingUtils.logPull(store, queue, deleted, sourceMessage, positionMap, pullEventId);
+				if (logMsg) {
+					deleted.forEach(m => pullLogMessages.set(m.userId, logMsg));
+				}
+			}
+		}
+
 		// When members are pulled, silently remove them from all other queues they belong to.
 		// This does not apply to manual leaves or auto-remove expiry.
 		if (reason === MemberRemovalReason.Pulled && deletedMembers.length > 0) {
@@ -265,11 +304,27 @@ export namespace MemberUtils {
 				const positionMap = new Map(queueMembersBefore.map((m, i) => [m.userId, i + 1]));
 
 				usersInOtherQueue.forEach(uid => {
+					const archivedMember = queueMembersBefore.find(m => m.userId === uid);
 					store.deleteMember({ queueId: otherQueue.id, userId: uid }, MemberRemovalReason.RemovedByPull);
 					modifyMemberRoles(store, uid, otherQueue.roleInQueueId, "remove").catch(() => null);
 					AutoRemoveUtils.cancel(otherQueue.id, uid);
 					const pos = positionMap.get(uid) ?? 0;
 					secondaryLines.push(`- ${userMention(uid)} in **${otherQueue.name}** at position \`${pos}\``);
+
+					// Append to all pull events that include this user
+					if (archivedMember) {
+						const eventId = pullEventIds.get(uid);
+						if (eventId) {
+							store.appendToPullEvent(eventId, [{
+								userId: uid,
+								queueId: otherQueue.id.toString(),
+								positionTime: archivedMember.positionTime.toString(),
+								joinTime: archivedMember.joinTime.toString(),
+								message: archivedMember.message,
+								reason: MemberRemovalReason.RemovedByPull,
+							}]);
+						}
+					}
 				});
 
 				DisplayUtils.requestDisplayUpdate({ store, queueId: otherQueue.id });
@@ -369,9 +424,10 @@ export namespace MemberUtils {
 		jsMember: GuildMember,
 		message?: string,
 		positionTime?: bigint,
+		joinTime?: bigint,
 		priorityOrder?: bigint,
 	}) {
-		const { store, queue, jsMember, message, positionTime, priorityOrder } = options;
+		const { store, queue, jsMember, message, positionTime, joinTime, priorityOrder } = options;
 
 		return await db.transaction(async () => {
 			const insertedMember = store.insertMember({
@@ -381,6 +437,7 @@ export namespace MemberUtils {
 				message,
 				priorityOrder: priorityOrder ?? null,
 				positionTime: positionTime ?? BigInt(Date.now()),
+				joinTime: joinTime ?? BigInt(Date.now()),
 			});
 
 			await modifyMemberRoles(store, jsMember.id, queue.roleInQueueId, "add");
@@ -424,7 +481,7 @@ export namespace MemberUtils {
 			.setDescription(await DisplayUtils.createMemberDisplayLine(store, member, position) ?? "Member not found");
 	}
 
-	export async function describePulledMembers(store: Store, queue: DbQueue, pulledMembers: DbMember[], reason: MemberRemovalReason) {
+	export async function describePulledMembers(store: Store, queue: DbQueue, pulledMembers: DbMember[], reason: MemberRemovalReason, pullEventId?: bigint) {
 		const pulledMembersOfQueue = pulledMembers.filter(member => member.queueId === queue.id);
 		const membersStr = (await membersMention(store, pulledMembersOfQueue))
 			.map(mention => `- ${mention}`)
@@ -434,7 +491,16 @@ export namespace MemberUtils {
 			? `${upperFirst(reason)} from queue:\n${membersStr}`
 			: `No members were ${reason} from queue.`;
 
-		return { embeds: [new EmbedBuilder().setTitle(queueMention(queue)).setColor(queue.color).setDescription(description)] };
+		const embed = new EmbedBuilder()
+			.setTitle(queueMention(queue))
+			.setColor(queue.color)
+			.setDescription(description);
+
+		if (pullEventId) {
+			embed.setFooter({ text: `Pull ID: ${pullEventId}` });
+		}
+
+		return { embeds: [embed] };
 	}
 
 	export async function describeMemberPositions(store: Store, userId: Snowflake) {

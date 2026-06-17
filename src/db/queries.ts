@@ -1,5 +1,5 @@
 import type { Snowflake } from "discord.js";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 import { db } from "./db.ts";
 import {
@@ -12,6 +12,7 @@ import {
 	type NewPatchNote,
 	PATCH_NOTE_TABLE,
 	PRIORITIZED_TABLE,
+	PULL_EVENT_TABLE,
 	QUEUE_TABLE,
 	SCHEDULE_TABLE,
 	VOICE_TABLE,
@@ -626,5 +627,19 @@ export namespace Queries {
 
 	export function insertPatchNotes(patchNote: NewPatchNote) {
 		return db.insert(PATCH_NOTE_TABLE).values(patchNote).returning().get();
+	}
+
+	export function selectPullEvent(by: { guildId: Snowflake, id: bigint }) {
+		return db.select().from(PULL_EVENT_TABLE)
+			.where(and(
+				eq(PULL_EVENT_TABLE.guildId, by.guildId),
+				eq(PULL_EVENT_TABLE.id, by.id),
+			))
+			.get();
+	}
+
+	export function deleteOldPullEvents() {
+		const oneDayAgo = BigInt(Date.now() - 24 * 60 * 60 * 1000);
+		return db.delete(PULL_EVENT_TABLE).where(lt(PULL_EVENT_TABLE.pulledAt, oneDayAgo)).run();
 	}
 }

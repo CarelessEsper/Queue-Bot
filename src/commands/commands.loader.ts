@@ -13,6 +13,7 @@ import { PositionsCommand } from "./commands/positions.command.ts";
 import { PrioritizeCommand } from "./commands/prioritize.command.ts";
 import { PullCommand } from "./commands/pull.command.ts";
 import { QueuesCommand } from "./commands/queues.command.ts";
+import { RevertCommand } from "./commands/revert.command.ts";
 import { ScheduleCommand } from "./commands/schedule.command.ts";
 import { ShowCommand } from "./commands/show.command.ts";
 import { ShuffleCommand } from "./commands/shuffle.command.ts";
@@ -31,6 +32,7 @@ export const COMMANDS = new Collection<string, Command>([
 	[PrioritizeCommand.ID, new PrioritizeCommand()],
 	[PullCommand.ID, new PullCommand()],
 	[QueuesCommand.ID, new QueuesCommand()],
+	[RevertCommand.ID, new RevertCommand()],
 	[ScheduleCommand.ID, new ScheduleCommand()],
 	[ShowCommand.ID, new ShowCommand()],
 	[ShuffleCommand.ID, new ShuffleCommand()],
