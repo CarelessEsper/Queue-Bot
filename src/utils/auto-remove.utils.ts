@@ -92,7 +92,7 @@ export namespace AutoRemoveUtils {
 
 		// Threshold: if a timer expired more than 3 minutes ago (the extend window),
 		// the user couldn't have responded anyway — remove silently without DMing.
-		const SILENT_REMOVAL_THRESHOLD_MS = 3 * 60 * 1000;
+		const SILENT_REMOVAL_THRESHOLD_MS = 5 * 60 * 1000;
 
 		// Stagger the ones that are still within the window to avoid a burst on restart.
 		const STAGGER_INTERVAL_MS = 500;
@@ -235,7 +235,7 @@ export namespace AutoRemoveUtils {
 			const embed = new EmbedBuilder()
 				.setTitle("Your queue time will expire soon")
 				.setDescription(
-					`Your time in ${queueNames} will expire in 3 minutes.\n\n` +
+					`Your time in ${queueNames} will expire in 5 minutes.\n\n` +
 					`Click **Extend Time** to stay in the queue for another **${timeMention(period)}**, ` +
 					`or you will be automatically removed.`
 				);
@@ -296,7 +296,7 @@ export namespace AutoRemoveUtils {
 					if (!freshQueue) return;
 
 					await removeMember(freshStore, freshQueue, userId);
-				}, 3 * 60 * 1000);
+				}, 5 * 60 * 1000);
 
 				pendingExtendPrompts.set(key, removalTimer);
 			}
